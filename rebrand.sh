@@ -195,6 +195,14 @@ def addprofile(s):
     return s
 edit("lib/features/profile/add/add_profile_modal.dart", addprofile)
 
+# 13. Главный экран: убрать вкладку «Быстрые настройки» (всё это есть в обычных настройках)
+def no_quick(s):
+    s, n = re.subn(r"\n\s*Material\(\n\s*color: theme\.colorScheme\.primaryContainer,(?:(?!\n\s*Material\().)*?showQuickSettings\(\).*?\n                      \),(?=\n                    \],)",
+                   "", s, count=1, flags=re.S)
+    assert n == 1, "quickSettings"
+    return s
+edit("lib/features/home/widget/home_page.dart", no_quick)
+
 # 8. Экран запуска: туннель на тёмном фоне
 import zlib, struct
 def png(path, w, h, px):

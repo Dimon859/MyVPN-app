@@ -52,6 +52,11 @@ jobs:
           grep -n "$GROUP" ios/Runner/Runner.entitlements ios/HiddifyPacketTunnel/HiddifyPacketTunnel.entitlements ios/Shared/FilePath.swift
           [ "$(grep -c "$GROUP" ios/Runner/Runner.entitlements ios/HiddifyPacketTunnel/HiddifyPacketTunnel.entitlements ios/Shared/FilePath.swift | awk -F: '{s+=$2} END {print s}')" -ge 3 ] || { echo "::error::App Group не подставилась"; exit 1; }
 
+      - name: Rebrand to MyVPN
+        env:
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: bash rebrand.sh
+
       - name: Prepare iOS
         run: make ios-prepare CHANNEL=prod
 

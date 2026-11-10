@@ -28,6 +28,7 @@ jobs:
       GROUP: ${{ inputs.app_group }}
       TEAM: ${{ inputs.team_id }}
       APPNAME: ${{ inputs.app_name }}
+      IPA: MyVPN-${{ inputs.app_version }}-b${{ github.run_number }}
     steps:
       - uses: actions/checkout@v6
 
@@ -81,11 +82,11 @@ jobs:
           mkdir -p Payload
           cp -R build/ios/iphoneos/Runner.app Payload/
           ls Payload/Runner.app/PlugIns || echo "::warning::PlugIns не найден"
-          zip -qry MyVPN-unsigned.ipa Payload
-          ls -lh MyVPN-unsigned.ipa
+          zip -qry "$IPA.ipa" Payload
+          ls -lh "$IPA.ipa"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: MyVPN-iOS-unsigned
-          path: MyVPN-unsigned.ipa
+          name: ${{ env.IPA }}
+          path: ${{ env.IPA }}.ipa
           retention-days: 30

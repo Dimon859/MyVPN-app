@@ -157,6 +157,44 @@ recolor("lib/features/home/widget/eclipse_button_painter.dart", [
     ("final upColor = x.p.dark ? const Color(0xFF3F7BFF) : const Color(0xFF2563EB);", "final upColor = x.p.dark ? const Color(0xFF22D3EE) : const Color(0xFF06B6D4);", 1),
 ])
 
+# 11. Интервал проверки серверов: 30 минут по умолчанию и надпись по-русски
+def interval_default(s):
+    a = '"url-test-interval",\n    const Duration(minutes: 10),'
+    assert s.count(a) == 1, "url-test-interval"
+    return s.replace(a, '"url-test-interval",\n    const Duration(minutes: 30),')
+edit("lib/features/settings/data/config_option_repository.dart", interval_default)
+RU_MIN = """
+
+// MyVPN: «30 минут» вместо английского «30 minutes»
+String _ruMinutes(Duration d) {
+  final m = d.inMinutes;
+  final a = m % 10, b = m % 100;
+  final w = (a == 1 && b != 11) ? 'минута' : (a >= 2 && a <= 4 && (b < 12 || b > 14)) ? 'минуты' : 'минут';
+  return '$m $w';
+}
+"""
+def interval_text(s):
+    s, n1 = re.subn(r"ref\.watch\(ConfigOptions\.urlTestInterval\)\.toApproximateTime\(isRelativeToNow: false\)",
+                    "_ruMinutes(ref.watch(ConfigOptions.urlTestInterval))", s)
+    s, n2 = re.subn(r"Duration\(minutes: value\.toInt\(\)\)\.toApproximateTime\(isRelativeToNow: false\)",
+                    "_ruMinutes(Duration(minutes: value.toInt()))", s)
+    assert n1 == 1 and n2 == 1, f"interval text {n1} {n2}"
+    if "toApproximateTime" not in s:
+        s = s.replace("import 'package:humanizer/humanizer.dart';\n", "")
+    return s.rstrip("\n") + RU_MIN
+edit("lib/features/settings/overview/sections/general_page.dart", interval_text)
+
+# 12. Окно «Добавить профиль»: убрать «Бесплатно» и «Справка» (нижняя строка)
+def addprofile(s):
+    for a, b in [
+        ("              const NavBar(),\n", "              const Gap(24),\n"),
+        ("AddProfileModalConst.navBarHeight + 32;", "24 + 32;"),
+    ]:
+        assert s.count(a) == 1, a.strip()
+        s = s.replace(a, b)
+    return s
+edit("lib/features/profile/add/add_profile_modal.dart", addprofile)
+
 # 8. Экран запуска: туннель на тёмном фоне
 import zlib, struct
 def png(path, w, h, px):

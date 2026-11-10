@@ -72,7 +72,16 @@ jobs:
           echo "версия расширения VPN: $(grep -c "MARKETING_VERSION = ${VER};" ios/Runner.xcodeproj/project.pbxproj) мест"
 
       - name: Prepare iOS
-        run: make ios-prepare CHANNEL=prod
+        run: |
+          CV=$(grep '^core.version=' dependencies.properties | cut -d= -f2)
+          MY="https://github.com/${GITHUB_REPOSITORY}/releases/download/core-v${CV}"
+          if curl -fsIL "$MY/hiddify-lib-ios.tar.gz" >/dev/null; then
+            echo "✅ ядро $CV из своего репозитория"; URL="$MY"
+          else
+            echo "::warning::своей копии ядра $CV нет (Actions → Save VPN core), беру у Hiddify"
+            URL="https://github.com/hiddify/hiddify-core/releases/download/v${CV}"
+          fi
+          make ios-prepare CHANNEL=prod CORE_URL="$URL"
 
       - name: Build iOS without signing
         run: make ios-validate CHANNEL=prod

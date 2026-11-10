@@ -48,11 +48,11 @@ if os.path.exists("ru_extra.json"):
         *parts, last = path.split(".")
         for p in parts:
             node = node.setdefault(p, {})
-        if last not in node:
+        if node.get(last) != val:
             node[last] = val
             added += 1
     json.dump(ru, open(rp, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
-    print("✅ русский перевод: добавлено строк:", added)
+    print("✅ русский перевод: добавлено и исправлено строк:", added)
 
 # 3. Тексты интерфейса на всех языках
 for f in sorted(glob.glob("assets/translations/*.i18n.json")):
@@ -138,25 +138,6 @@ for sz, f in [(256, "LaunchImage.png"), (512, "LaunchImage@2x.png"), (768, "Laun
     launch(sz, d + f)
 png("ios/Runner/Assets.xcassets/LaunchBackground.imageset/background.png", 1, 1, lambda x, y: bytes((0x0F, 0x17, 0x2A, 255)))
 
-# 8б. Новый способ экрана запуска (UILaunchScreen вместо старого storyboard),
-#     чтобы iOS не показывала закэшированный старый «Hi»
-import os, json, shutil, plistlib
-A = "ios/Runner/Assets.xcassets/"
-os.makedirs(A + "MyVPNLaunch.imageset", exist_ok=True)
-imgs = []
-for f, sc in [("LaunchImage.png", "1x"), ("LaunchImage@2x.png", "2x"), ("LaunchImage@3x.png", "3x")]:
-    shutil.copy(d + f, A + "MyVPNLaunch.imageset/" + f.replace("LaunchImage", "MyVPNLaunch"))
-    imgs.append({"filename": f.replace("LaunchImage", "MyVPNLaunch"), "idiom": "universal", "scale": sc})
-json.dump({"images": imgs, "info": {"author": "xcode", "version": 1}}, open(A + "MyVPNLaunch.imageset/Contents.json", "w"), indent=2)
-os.makedirs(A + "MyVPNLaunchBg.colorset", exist_ok=True)
-json.dump({"colors": [{"idiom": "universal", "color": {"color-space": "srgb", "components":
-           {"red": "0.059", "green": "0.090", "blue": "0.165", "alpha": "1.000"}}}],
-           "info": {"author": "xcode", "version": 1}}, open(A + "MyVPNLaunchBg.colorset/Contents.json", "w"), indent=2)
-ip = "ios/Runner/Info.plist"
-pl = plistlib.load(open(ip, "rb"))
-pl.pop("UILaunchStoryboardName", None)
-pl["UILaunchScreen"] = {"UIColorName": "MyVPNLaunchBg", "UIImageName": "MyVPNLaunch"}
-plistlib.dump(pl, open(ip, "wb"))
 print("✅ экран запуска")
 
 # Проверка: в текстах интерфейса не осталось «Hiddify»

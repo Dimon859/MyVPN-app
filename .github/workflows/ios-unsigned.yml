@@ -15,6 +15,9 @@ on:
       app_name:
         description: 'Название под иконкой на iPhone'
         default: 'MyVPN'
+      app_version:
+        description: 'Версия приложения (например 1.0.0)'
+        default: '1.0.0'
 
 jobs:
   ios:
@@ -56,6 +59,16 @@ jobs:
         env:
           REPO_URL: ${{ github.server_url }}/${{ github.repository }}
         run: bash rebrand.sh
+
+      - name: Set version
+        env:
+          VER: ${{ inputs.app_version }}
+          NUM: ${{ github.run_number }}
+        run: |
+          sed -i '' "s/^version: .*/version: ${VER}+${NUM}/" pubspec.yaml
+          sed -i '' -E "s/MARKETING_VERSION = [0-9.]+;/MARKETING_VERSION = ${VER};/g; s/CURRENT_PROJECT_VERSION = [0-9]+;/CURRENT_PROJECT_VERSION = ${NUM};/g" ios/Runner.xcodeproj/project.pbxproj
+          grep -n "^version:" pubspec.yaml
+          echo "версия расширения VPN: $(grep -c "MARKETING_VERSION = ${VER};" ios/Runner.xcodeproj/project.pbxproj) мест"
 
       - name: Prepare iOS
         run: make ios-prepare CHANNEL=prod

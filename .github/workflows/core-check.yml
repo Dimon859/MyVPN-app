@@ -1,0 +1,52 @@
+name: Check new VPN core
+
+# Раз в неделю смотрит, не вышло ли у Hiddify новое ядро.
+# Если вышло: уведомление в ntfy (секрет NTFY_TOPIC) и красная сборка в Actions (+ письмо от GitHub).
+# Само ядро не обновляет: новое сначала проверяем, потом сохраняем через «Save VPN core».
+on:
+  schedule:
+    - cron: '41 6 * * 4'   # каждый четверг
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Compare versions
+        run: |
+          set -e
+          MINE=$(grep '^core.version=' dependencies.properties | cut -d= -f2)
+          LATEST=$(gh api repos/hiddify/hiddify-core/releases/latest -q .tag_name | sed 's/^v//')
+          echo "Ядро в приложении: $MINE"
+          echo "Последнее у Hiddify: $LATEST"
+          [ -n "$LATEST" ] || { echo "::warning::не удалось узнать версию у Hiddify"; exit 0; }
+          NEWEST=$(printf '%s\n%s\n' "$MINE" "$LATEST" | sort -V | tail -1)
+          if [ "$LATEST" = "$MINE" ] || [ "$NEWEST" = "$MINE" ]; then
+            echo "✅ ядро актуальное ($MINE)"
+            exit 0
+          fi
+          MSG="Вышло новое ядро VPN: $LATEST (в приложении $MINE). Напиши Claude, чтобы проверить и обновить."
+          echo "🆕 $MSG"
+          if [ -n "$NTFY_TOPIC" ]; then
+            curl -fsS -H "Title: MyVPN-app: новое ядро $LATEST" -H "Tags: package" \
+              -d "$MSG https://github.com/hiddify/hiddify-core/releases/tag/v$LATEST" \
+              "https://ntfy.sh/$NTFY_TOPIC" >/dev/null && echo "✅ уведомление в ntfy отправлено"
+          else
+            echo "::warning::секрет NTFY_TOPIC не задан, уведомление в ntfy не отправлено"
+          fi
+          echo "::error::$MSG"
+          exit 1
+
+      # GitHub отключает расписание после 60 дней без коммитов — продлеваем каждую неделю
+      - name: Keep schedule alive
+        if: always()
+        run: gh api -X PUT "repos/${GITHUB_REPOSITORY}/actions/workflows/core-check.yml/enable" && echo "✅ расписание продлено"

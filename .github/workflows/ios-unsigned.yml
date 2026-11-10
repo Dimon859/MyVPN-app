@@ -1,0 +1,67 @@
+name: iOS unsigned IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      bundle_id:
+        description: 'Bundle ID из профиля (application-identifier без Team ID)'
+        default: 'app.wolf1222.pomegranate4762'
+      app_group:
+        description: 'App Group из профиля'
+        default: 'group.88a127e35b3d8761.1'
+      team_id:
+        description: 'Team ID из профиля'
+        default: 'HH34UVC32L'
+
+jobs:
+  ios:
+    runs-on: macos-26
+    timeout-minutes: 120
+    env:
+      BUNDLE: ${{ inputs.bundle_id }}
+      GROUP: ${{ inputs.app_group }}
+      TEAM: ${{ inputs.team_id }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: subosito/flutter-action@v2.21.0
+        with:
+          flutter-version: '3.38.5'
+          channel: 'stable'
+          cache: true
+
+      - name: Setup dependencies
+        run: |
+          make ios-install-deps
+          echo "$HOME/.pub-cache/bin" >> $GITHUB_PATH
+
+      - name: Set my Bundle ID, Team and App Group
+        run: |
+          sed -i '' "s/^BASE_BUNDLE_IDENTIFIER=.*/BASE_BUNDLE_IDENTIFIER=${BUNDLE}/" ios/Base.xcconfig
+          sed -i '' "s/^DEVELOPMENT_TEAM=.*/DEVELOPMENT_TEAM=${TEAM}/" ios/Base.xcconfig
+          sed -i '' "s/group\.\$(BASE_BUNDLE_IDENTIFIER)/${GROUP}/" ios/Runner/Runner.entitlements ios/HiddifyPacketTunnel/HiddifyPacketTunnel.entitlements
+          sed -i '' "s/static let groupName = .*/static let groupName = \"${GROUP}\"/" ios/Shared/FilePath.swift
+          echo "--- проверка ---"
+          grep -n "BUNDLE\|TEAM" ios/Base.xcconfig
+          grep -n "$GROUP" ios/Runner/Runner.entitlements ios/HiddifyPacketTunnel/HiddifyPacketTunnel.entitlements ios/Shared/FilePath.swift
+          [ "$(grep -c "$GROUP" ios/Runner/Runner.entitlements ios/HiddifyPacketTunnel/HiddifyPacketTunnel.entitlements ios/Shared/FilePath.swift | awk -F: '{s+=$2} END {print s}')" -ge 3 ] || { echo "::error::App Group не подставилась"; exit 1; }
+
+      - name: Prepare iOS
+        run: make ios-prepare CHANNEL=prod
+
+      - name: Build iOS without signing
+        run: make ios-validate CHANNEL=prod
+
+      - name: Pack IPA
+        run: |
+          mkdir -p Payload
+          cp -R build/ios/iphoneos/Runner.app Payload/
+          ls Payload/Runner.app/PlugIns || echo "::warning::PlugIns не найден"
+          zip -qry MyVPN-unsigned.ipa Payload
+          ls -lh MyVPN-unsigned.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MyVPN-iOS-unsigned
+          path: MyVPN-unsigned.ipa
+          retention-days: 30

@@ -203,6 +203,23 @@ def no_quick(s):
     return s
 edit("lib/features/home/widget/home_page.dart", no_quick)
 
+# 14. Аналитика (отчёты о сбоях разработчикам Hiddify): выключена всегда, пункт убран
+def no_analytics(s):
+    for a, b in [
+        ("return preferences.getBool(enableAnalyticsPrefKey) ?? false;", "return false; // MyVPN: аналитика выключена всегда"),
+        ("Future<void> enableAnalytics() async {\n", "Future<void> enableAnalytics() async {\n    return; // MyVPN: аналитика выключена всегда\n"),
+    ]:
+        assert s.count(a) == 1, a[:40]
+        s = s.replace(a, b)
+    return s
+edit("lib/core/analytics/analytics_controller.dart", no_analytics)
+for f in ["lib/features/settings/overview/sections/general_page.dart", "lib/features/intro/widget/intro_page.dart"]:
+    def drop_tile(s):
+        s, n = re.subn(r"\n[ \t]*const EnableAnalyticsPrefTile\(\),", "", s)
+        assert n == 1, "EnableAnalyticsPrefTile"
+        return s
+    edit(f, drop_tile)
+
 # 8. Экран запуска: туннель на тёмном фоне
 import zlib, struct
 def png(path, w, h, px):

@@ -12,6 +12,9 @@ on:
       team_id:
         description: 'Team ID из профиля'
         default: 'HH34UVC32L'
+      app_name:
+        description: 'Название под иконкой на iPhone'
+        default: 'MyVPN'
 
 jobs:
   ios:
@@ -21,6 +24,7 @@ jobs:
       BUNDLE: ${{ inputs.bundle_id }}
       GROUP: ${{ inputs.app_group }}
       TEAM: ${{ inputs.team_id }}
+      APPNAME: ${{ inputs.app_name }}
     steps:
       - uses: actions/checkout@v6
 
@@ -41,7 +45,9 @@ jobs:
           sed -i '' "s/^DEVELOPMENT_TEAM=.*/DEVELOPMENT_TEAM=${TEAM}/" ios/Base.xcconfig
           sed -i '' "s/group\.\$(BASE_BUNDLE_IDENTIFIER)/${GROUP}/" ios/Runner/Runner.entitlements ios/HiddifyPacketTunnel/HiddifyPacketTunnel.entitlements
           sed -i '' "s/static let groupName = .*/static let groupName = \"${GROUP}\"/" ios/Shared/FilePath.swift
+          plutil -replace CFBundleDisplayName -string "$APPNAME" ios/Runner/Info.plist
           echo "--- проверка ---"
+          plutil -extract CFBundleDisplayName raw ios/Runner/Info.plist
           grep -n "BUNDLE\|TEAM" ios/Base.xcconfig
           grep -n "$GROUP" ios/Runner/Runner.entitlements ios/HiddifyPacketTunnel/HiddifyPacketTunnel.entitlements ios/Shared/FilePath.swift
           [ "$(grep -c "$GROUP" ios/Runner/Runner.entitlements ios/HiddifyPacketTunnel/HiddifyPacketTunnel.entitlements ios/Shared/FilePath.swift | awk -F: '{s+=$2} END {print s}')" -ge 3 ] || { echo "::error::App Group не подставилась"; exit 1; }

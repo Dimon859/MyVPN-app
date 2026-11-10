@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: geo-sync
@@ -57,3 +58,11 @@ jobs:
           git commit -qm "Обновление правил $(date -u +%F)"
           git push -q "$URL" HEAD:rule-set
           echo "✅ ветка rule-set обновлена"
+
+      # GitHub сам отключает расписание, если в репозитории 60 дней нет коммитов.
+      # Это «продлевает» его каждую неделю, чтобы обновления не остановились.
+      - name: Keep schedule alive
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${GITHUB_REPOSITORY}/actions/workflows/geo-sync.yml/enable" && echo "✅ расписание продлено"

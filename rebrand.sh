@@ -273,6 +273,27 @@ def ua_tile(s):
     return s.rstrip("\n") + UA_LIST
 edit("lib/features/settings/overview/sections/general_page.dart", ua_tile)
 
+# 16. Независимость от чужих репозиториев
+# 16а. Флажки стран — из своей копии third_party/circle_flags
+def flags(s):
+    a = "  circle_flags:\n    git: https://github.com/hiddify-com/flutter_circle_flags.git\n"
+    assert s.count(a) == 1, "circle_flags git"
+    return s.replace(a, "  circle_flags:\n    path: third_party/circle_flags\n")
+import os
+assert os.path.exists("third_party/circle_flags/pubspec.yaml"), "нет third_party/circle_flags"
+edit("pubspec.yaml", flags)
+# 16б. Правила маршрутизации — из своей ветки rule-set (её обновляет Actions → Sync rule sets)
+raw = repo.replace("https://github.com/", "https://raw.githubusercontent.com/") + "/rule-set"
+def geo(s):
+    for a, b in [
+        ("const _geoUrl = 'https://raw.githubusercontent.com/hiddify/hiddify-geo/rule-set';", f"const _geoUrl = '{raw}';"),
+        ("const _geositeUrl = 'https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set';", f"const _geositeUrl = '{raw}/sagernet';"),
+    ]:
+        assert s.count(a) == 1, a[:40]
+        s = s.replace(a, b)
+    return s
+edit("lib/features/route_rules/notifier/rules_notifier.dart", geo)
+
 # 8. Экран запуска: туннель на тёмном фоне
 import zlib, struct
 def png(path, w, h, px):

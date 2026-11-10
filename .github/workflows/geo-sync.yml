@@ -1,0 +1,59 @@
+name: Sync rule sets
+
+# Копирует правила маршрутизации (обход сайтов региона, блокировка рекламы и т. п.)
+# в ветку rule-set этого репозитория. Приложение скачивает их оттуда.
+# Если источник пропадёт, у тебя останется последняя копия.
+on:
+  schedule:
+    - cron: '17 3 * * 1'   # каждый понедельник
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: geo-sync
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download rule sets
+        run: |
+          set -e
+          git clone -q --depth 1 -b rule-set https://github.com/hiddify/hiddify-geo up
+          mkdir -p new/sagernet
+          cp -R up/block up/country new/
+          for f in apple android googlefcm ubuntu debian fedora archlinux; do
+            curl -fsSL --retry 5 -o "new/sagernet/geosite-$f.srs" \
+              "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-$f.srs"
+          done
+          # каждый файл — настоящий набор правил sing-box (начинается с «SRS») и не пустой
+          n=0
+          for f in $(find new -name '*.srs'); do
+            [ -s "$f" ] && [ "$(head -c 3 "$f")" = "SRS" ] || { echo "::error::плохой файл $f"; exit 1; }
+            n=$((n+1))
+          done
+          [ "$n" -ge 20 ] || { echo "::error::слишком мало файлов: $n"; exit 1; }
+          echo "✅ скачано наборов правил: $n"
+
+      - name: Update branch rule-set
+        run: |
+          set -e
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          URL="https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git"
+          if git ls-remote --exit-code --heads "$URL" rule-set >/dev/null; then
+            git clone -q --depth 1 -b rule-set "$URL" out
+          else
+            git init -q out && git -C out checkout -q --orphan rule-set
+          fi
+          find out -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -R new/. out/
+          printf "# Правила маршрутизации MyVPN\n\nКопия наборов правил для приложения. Обновляется автоматически (Actions → Sync rule sets).\n\n- block/, country/ — из hiddify/hiddify-geo\n- sagernet/ — из SagerNet/sing-geosite\n" > out/README.md
+          cd out
+          git add -A
+          if git diff --cached --quiet; then echo "✅ без изменений"; exit 0; fi
+          git commit -qm "Обновление правил $(date -u +%F)"
+          git push -q "$URL" HEAD:rule-set
+          echo "✅ ветка rule-set обновлена"

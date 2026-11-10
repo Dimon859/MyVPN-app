@@ -138,5 +138,12 @@
   "dialogs.dbBroken.msg": "Hiddify не смог открыть сохранённые профили. Сотрите сохранённые данные, чтобы начать заново: подписки и локальные профили по возможности добавятся обратно, а настройки сохранятся.",
   "dialogs.dbBroken.wipeData": "Стереть данные",
   "dialogs.dbBroken.wipeConfirm": "Сохранённые данные стираются, и Hiddify запускается заново. Профили, которые ещё читаются, добавляются обратно; остальные не восстановить.",
-  "dialogs.dbBroken.copyError": "Копировать ошибку"
+  "dialogs.dbBroken.copyError": "Копировать ошибку",
+  "pages.settings.routing.balancerStrategy.title": "Стратегия балансировки",
+  "pages.settings.routing.balancerStrategy.roundRobin": "По очереди",
+  "pages.settings.routing.balancerStrategy.consistentHash": "Сайт на одном сервере",
+  "pages.settings.routing.balancerStrategy.stickySession": "Закреплённая сессия",
+  "pages.settings.tlsTricks.padding.enable": "Включить заполнение (padding)",
+  "pages.settings.tlsTricks.padding.size": "Размер заполнения",
+  "pages.settings.inbound.directPort": "Локальный порт (напрямую)"
 }

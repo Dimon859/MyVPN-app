@@ -111,6 +111,52 @@ def intro(s):
     return s
 edit("lib/features/intro/widget/intro_page.dart", intro)
 
+# 9. Мои настройки по умолчанию (после установки ничего не надо выставлять заново)
+def defaults(s):
+    for a, b in [
+        ('"balancer-strategy",\n    BalancerStrategy.roundRobin,', '"balancer-strategy",\n    BalancerStrategy.consistentHash,'),
+        ('"default-proxy",\n    DefaultProxy.balance,', '"default-proxy",\n    DefaultProxy.lowest,'),
+        ('"region",\n    Region.other,', '"region",\n    Region.ru,'),
+        ('create<bool, bool>("resolve-destination", false)', 'create<bool, bool>("resolve-destination", true)'),
+        ('defaultValueFunction: (ref) => ref.read(region) == Region.cn ? "223.5.5.5" : "1.1.1.1",',
+         'defaultValueFunction: (ref) => ref.read(region) == Region.cn ? "223.5.5.5" : (ref.read(region) == Region.ru ? "77.88.8.8" : "1.1.1.1"),'),
+    ]:
+        assert s.count(a) == 1, a[:40]
+        s = s.replace(a, b)
+    return s
+edit("lib/features/settings/data/config_option_repository.dart", defaults)
+def rules(s):
+    assert s.count("systemDirect(enabledByDefault: false)") == 1, "systemDirect"
+    return s.replace("systemDirect(enabledByDefault: false)", "systemDirect(enabledByDefault: true)")
+edit("lib/features/route_rules/notifier/rules_notifier.dart", rules)
+
+# 10. Цвета (вариант 3): тёмная кнопка, голубой туннель, зелёный при подключении
+def recolor(path, pairs):
+    def fn(s):
+        for a, b, n in pairs:
+            assert s.count(a) == n, f"{path}: {a[:50]} ({s.count(a)})"
+            s = s.replace(a, b)
+        return s
+    edit(path, fn)
+recolor("lib/core/theme/theme_extensions.dart", [
+    ("idleColor: Color(0xFF4a4d8b)", "idleColor: Color(0xFF22D3EE)", 1),
+    ("connectedColor: Color(0xFF44a334)", "connectedColor: Color(0xFF34D399)", 1),
+])
+recolor("lib/core/theme/app_theme.dart", [
+    ("seedColor: const Color(0xFF293CA0)", "seedColor: const Color(0xFF22D3EE)", 2),
+])
+recolor("lib/features/home/widget/connection_button.dart", [
+    ("const Color(0xFF455FE9)", "const Color(0xFF22D3EE)", 2),
+])
+recolor("lib/features/home/widget/eclipse_button_painter.dart", [
+    ("canvas.drawCircle(center, r, Paint()..color = Colors.white);", "canvas.drawCircle(center, r, Paint()..color = const Color(0xFF1E293B));", 1),
+    ("..color = Colors.white.withValues(alpha: .8)\n      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.5)",
+     "..color = Colors.white.withValues(alpha: .12)\n      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.5)", 1),
+    ("x.logoSpace((c) => c.drawPaint(Paint()..color = Colors.white))", "x.logoSpace((c) => c.drawPaint(Paint()..color = const Color(0xFF1E293B)))", 1),
+    ("final downColor = x.p.dark ? const Color(0xFFFFB020) : const Color(0xFFF59E0B);", "final downColor = x.p.dark ? const Color(0xFF34D399) : const Color(0xFF10B981);", 1),
+    ("final upColor = x.p.dark ? const Color(0xFF3F7BFF) : const Color(0xFF2563EB);", "final upColor = x.p.dark ? const Color(0xFF22D3EE) : const Color(0xFF06B6D4);", 1),
+])
+
 # 8. Экран запуска: туннель на тёмном фоне
 import zlib, struct
 def png(path, w, h, px):

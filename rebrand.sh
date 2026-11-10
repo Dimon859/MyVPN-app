@@ -55,30 +55,29 @@ print("✅ assets/images/logo.svg")
 
 # 6. Кнопка подключения: туннель вместо анимированного «Hi»
 LOGO = """abstract final class _HiLogo {
-  // MyVPN: туннель (64 × 64); части: левая нога, середина, правая нога
-  static final _outer = _svgPath('__OUTER__');
-  static final _inner = _svgPath('__INNER__');
-
-  static final all = Path.combine(PathOperation.union, _outer, _inner);
-  static final h = Path.combine(PathOperation.intersect, all, Path()..addRect(const Rect.fromLTRB(-2, -2, 44, 66)));
-  static final stem = Path.combine(PathOperation.intersect, all, Path()..addRect(const Rect.fromLTRB(44, -2, 66, 66)));
+  // MyVPN: туннель (64 × 64) из двух целых арок: внутренняя (части 0–1) и внешняя (часть 2)
+  static final h = _svgPath('__INNER__');
+  static final stem = _svgPath('__OUTER__');
   static final dot = Path();
+
+  static final all = Path.combine(PathOperation.union, h, stem);
 
   static Path pathOf(int part) => part < 2 ? h : (part == 2 ? stem : dot);
 
+  // часть 1 пустая, чтобы внутренняя арка не рисовалась дважды
   static Rect clipOf(int part) => switch (part) {
-    0 => const Rect.fromLTRB(-2, -2, 20, 66),
-    1 => const Rect.fromLTRB(20, -2, 44, 66),
+    1 => Rect.zero,
     _ => const Rect.fromLTRB(-2, -2, 66, 66),
   };
 
-  static const tops = [4.3, 2.0, 4.3, 2.0];
+  static const tops = [24.0, 24.0, 2.0, 2.0];
   static const bottoms = [62.0, 62.0, 62.0, 62.0];
-  static const centersX = [10.0, 32.0, 54.0, 54.0];
+  static const centersX = [32.0, 32.0, 32.0, 32.0];
 
-  static const bar = [0, 1, 2, 2];
+  static const bar = [0, 0, 2, 2];
 
-  static const rank = [0.0, 1.0, 2.0, 2.6];
+  // сначала внутренняя арка, потом внешняя: волна изнутри наружу
+  static const rank = [0.0, 0.0, 1.0, 1.6];
 }""".replace("__OUTER__", 'M0 62V34C0 16.326 14.326 2 32 2C49.674 2 64 16.326 64 34V62H52V34C52 22.954 43.046 14 32 14C20.954 14 12 22.954 12 34V62Z').replace("__INNER__", 'M20 62V36C20 29.372 25.372 24 32 24C38.628 24 44 29.372 44 36V62H36V37C36 34.791 34.209 33 32 33C29.791 33 28 34.791 28 37V62Z')
 def button(s):
     s, n = re.subn(r"abstract final class _HiLogo \{.*?static const rank = \[[^\]]*\];\n\}", lambda m: LOGO, s, count=1, flags=re.S)

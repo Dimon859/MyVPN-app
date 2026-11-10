@@ -220,6 +220,59 @@ for f in ["lib/features/settings/overview/sections/general_page.dart", "lib/feat
         return s
     edit(f, drop_tile)
 
+# 15. Выбор User-Agent для загрузки подписок (Настройки → Общие)
+def ua_pref(s):
+    a = 'static final lastSeenCrashReport = PreferencesNotifier.create<String, String>("last_seen_crash_report", "");\n'
+    assert s.count(a) == 1, "lastSeenCrashReport"
+    return s.replace(a, a + '\n  /// MyVPN: User-Agent для загрузки подписок, пусто = стандартный\n'
+                     '  static final subscriptionUserAgent = PreferencesNotifier.create<String, String>("myvpn_sub_user_agent", "");\n')
+edit("lib/core/preferences/general_preferences.dart", ua_pref)
+def ua_client(s):
+    for a, b in [
+        ("import 'package:hiddify/core/http_client/dio_http_client.dart';\n",
+         "import 'package:hiddify/core/http_client/dio_http_client.dart';\nimport 'package:hiddify/core/preferences/general_preferences.dart';\n"),
+        ("  ref.listen(ConfigOptions.mixedPort,",
+         "  // MyVPN: свой User-Agent для подписок, если выбран в настройках\n"
+         "  final defaultUserAgent = client.userAgent;\n"
+         "  void setUserAgent() {\n"
+         "    final ua = ref.read(Preferences.subscriptionUserAgent);\n"
+         "    client.userAgent = ua.trim().isEmpty ? defaultUserAgent : ua;\n"
+         "  }\n"
+         "  ref.listen(Preferences.subscriptionUserAgent, (_, _) => setUserAgent());\n"
+         "  setUserAgent();\n\n"
+         "  ref.listen(ConfigOptions.mixedPort,"),
+    ]:
+        assert s.count(a) == 1, a[:50]
+        s = s.replace(a, b)
+    return s
+edit("lib/core/http_client/http_client_provider.dart", ua_client)
+UA_LIST = """
+
+// MyVPN: варианты User-Agent для подписок (значение → подпись)
+const _myUserAgents = {
+  '': 'Стандартный',
+  'Happ/3.5.0': 'Happ',
+  'v2rayNG/1.10.5': 'v2rayNG',
+  'Karing/1.1.2': 'Karing',
+  'sing-box 1.12.0': 'sing-box',
+  'clash.meta': 'Clash Meta',
+};
+"""
+def ua_tile(s):
+    a = "onChanged: ref.read(Preferences.autoCheckIp.notifier).update,\n          ),\n"
+    assert s.count(a) == 1, "autoCheckIp tile"
+    s = s.replace(a, a +
+        "          ChoicePreferenceWidget<String>(\n"
+        "            selected: ref.watch(Preferences.subscriptionUserAgent),\n"
+        "            preferences: ref.watch(Preferences.subscriptionUserAgent.notifier),\n"
+        "            choices: _myUserAgents.keys.toList(),\n"
+        "            title: 'User-Agent подписок',\n"
+        "            icon: Icons.badge_rounded,\n"
+        "            presentChoice: (value) => _myUserAgents[value] ?? value,\n"
+        "          ),\n")
+    return s.rstrip("\n") + UA_LIST
+edit("lib/features/settings/overview/sections/general_page.dart", ua_tile)
+
 # 8. Экран запуска: туннель на тёмном фоне
 import zlib, struct
 def png(path, w, h, px):

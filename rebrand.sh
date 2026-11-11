@@ -440,8 +440,8 @@ MY_ALL = r"""
       final dir = _profilePathResolver.directory;
       if (await dir.exists()) {
         await for (final f in dir.list()) {
-          if (f is File && f.path.endsWith('.json') && !f.path.endsWith('.tmp.json')) {
-            await myApplyHiddenToFile(f.path);
+          if (f is File && f.path.endsWith('.json') && !f.path.endsWith('.tmp.json') && !f.path.endsWith('.orig.json')) {
+            await myApplyToFile(f.path);
           }
         }
       }
@@ -505,8 +505,14 @@ MY_ALL = r"""
       final others = profiles.where((p) => !_myIsSpecial(p)).toList();
       final texts = <String>[];
       for (final p in others) {
+        // исходные серверы подписки (без её личных фильтров), общие фильтры применятся к самому профилю
         final file = _profilePathResolver.file(p.id);
-        if (await file.exists()) texts.add(await file.readAsString());
+        final orig = File(myOrigPath(file.path));
+        if (await orig.exists()) {
+          texts.add(await orig.readAsString());
+        } else if (await file.exists()) {
+          texts.add(await file.readAsString());
+        }
       }
       // «Все подписки» — когда подписок хотя бы две
       final all = (outbounds: <Map<String, dynamic>>[], endpoints: <Map<String, dynamic>>[]);
@@ -522,7 +528,7 @@ MY_ALL = r"""
       if (MyMarks.fav.isNotEmpty) {
         final seen = <String>{}, tags = <String>{};
         for (final t in texts) {
-          _myCollect(t, fav.outbounds, fav.endpoints, seen, tags, where: (o) => MyMarks.fav.contains(myServerKey(o)));
+          _myCollect(t, fav.outbounds, fav.endpoints, seen, tags, where: (o) => myHasKey(MyMarks.fav, o));
         }
       }
       await _myUpsert(myFavName, profiles.where((p) => _myIsNamed(p, myFavName)).toList(), fav.outbounds, fav.endpoints);
@@ -599,10 +605,16 @@ MY_ALL = r"""
         final mine = [for (final e in entries) ?_readable(e)].where(_myIsMine).firstOrNull;
         if (mine != null) {
           final old = _profilePathResolver.file(mine.id);
-          if (await old.exists()) _myCollect(await old.readAsString(), outbounds, endpoints, seen, tags);
+          final oldOrig = File(myOrigPath(old.path));
+          if (await oldOrig.exists()) {
+            _myCollect(await oldOrig.readAsString(), outbounds, endpoints, seen, tags);
+          } else if (await old.exists()) {
+            _myCollect(await old.readAsString(), outbounds, endpoints, seen, tags);
+          }
         }
         final before = outbounds.length + endpoints.length;
-        _myCollect(await outFile.readAsString(), outbounds, endpoints, seen, tags);
+        final newOrig = File(myOrigPath(outFile.path));
+        _myCollect(await (await newOrig.exists() ? newOrig : outFile).readAsString(), outbounds, endpoints, seen, tags);
         if (outbounds.isEmpty && endpoints.isEmpty) throw const ProfileFailure.invalidConfig();
         final merged = jsonEncode({'outbounds': outbounds, if (endpoints.isNotEmpty) 'endpoints': endpoints});
         const override = UserOverride(name: myMineName);
@@ -618,6 +630,8 @@ MY_ALL = r"""
       } finally {
         if (inFile.existsSync()) inFile.deleteSync();
         if (outFile.existsSync()) outFile.deleteSync();
+        final tmpOrig = File(myOrigPath(outFile.path));
+        if (tmpOrig.existsSync()) tmpOrig.deleteSync();
       }
     },
     (e, st) => e is ProfileFailure ? e : ProfileFailure.unexpected(e, st),
@@ -630,13 +644,17 @@ def all_profile(s):
         ("import 'package:dio/dio.dart';\n", "import 'dart:async';\nimport 'dart:convert';\nimport 'dart:io';\n\nimport 'package:dio/dio.dart';\n"),
         ("import 'package:hiddify/features/profile/data/profile_parser.dart';\n",
          "import 'package:hiddify/features/profile/data/myvpn_marks.dart';\nimport 'package:hiddify/features/profile/data/profile_parser.dart';\n"),
+        ("      await _profilePathResolver.file(id).delete();\n",
+         "      await _profilePathResolver.file(id).delete();\n"
+         "      final myOrig = File(myOrigPath(_profilePathResolver.file(id).path)); // MyVPN\n"
+         "      if (await myOrig.exists()) await myOrig.delete();\n"),
         ("                  (_) => _singbox.validateConfigByPath(path, tempPath, debug).mapLeft(ProfileFailure.invalidConfig),\n",
          "                  (_) => _singbox.validateConfigByPath(path, tempPath, debug).mapLeft(ProfileFailure.invalidConfig),\n"
          "                )\n"
          "                // MyVPN: исключённые серверы остаются исключёнными после обновления подписки\n"
          "                .flatMap(\n"
          "                  (_) => TaskEither.tryCatch(() async {\n"
-         "                    await myApplyHiddenToFile(path);\n"
+         "                    await myAfterProfileWritten(path);\n"
          "                    return unit;\n"
          "                  }, ProfileFailure.unexpected),\n"),
         ("      }\n\n      return right(unit);\n    }, ProfileUnexpectedFailure.new);\n  }\n",

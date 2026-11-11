@@ -8,6 +8,7 @@ import 'package:hiddify/features/common/qr_code_dialog.dart';
 import 'package:hiddify/features/profile/data/profile_data_providers.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/widget/myvpn_share_links.dart';
+import 'package:hiddify/utils/myvpn_xray_names.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// Один сервер профиля: имя и короткое описание (протокол, транспорт).
@@ -30,7 +31,9 @@ Future<List<MyServer>> myProfileServers(WidgetRef ref, String id) async {
         if (item is! Map<String, dynamic>) continue;
         final type = (item['type'] ?? '').toString();
         if (_mySkipTypes.contains(type)) continue;
-        result.add((name: (item['tag'] ?? type).toString(), info: _myInfo(item), json: item));
+        final tag = (item['tag'] ?? type).toString();
+        if (tag.contains('§hide§')) continue;
+        result.add((name: myCleanTag(tag), info: _myInfo(item), json: item));
       }
     }
     return result;
@@ -125,7 +128,7 @@ Future<void> showMyServers(BuildContext context, WidgetRef ref, ProfileEntity pr
     useRootNavigator: true,
     builder: (context) {
       final theme = Theme.of(context);
-      final links = [for (final s in servers) ?myOutboundToLink(s.json)];
+      final links = [for (final s in servers) ?myOutboundToLink({...s.json, 'tag': s.name})];
       return AlertDialog(
         title: Text('${profile.name}\n${myServersWord(servers.length)} · ${myUpdatedText(profile.lastUpdate)}'),
         titleTextStyle: theme.textTheme.titleMedium,
@@ -168,7 +171,7 @@ void _myCopy(BuildContext context, String text, String message) {
 
 /// Один сервер: JSON, ссылка, QR-код.
 Future<void> showMyServer(BuildContext context, MyServer server) async {
-  final link = myOutboundToLink(server.json);
+  final link = myOutboundToLink({...server.json, 'tag': server.name});
   final json = myPrettyJson(server.json);
   await showDialog<void>(
     context: context,

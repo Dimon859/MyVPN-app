@@ -707,6 +707,20 @@ def hwid_tiles(s):
     return s
 edit("lib/features/settings/overview/sections/general_page.dart", hwid_tiles)
 
+# 23. Подписки в формате Xray JSON (Happ/Incy): понятные имена серверов из "remarks" вместо «proxy-1 § 0»
+assert os.path.exists("lib/utils/myvpn_xray_names.dart"), "нет myvpn_xray_names.dart"
+def xray_names(s):
+    for a, b in [
+        ("import 'package:hiddify/utils/utils.dart';\n",
+         "import 'package:hiddify/utils/myvpn_xray_names.dart';\nimport 'package:hiddify/utils/utils.dart';\n"),
+        ("        final expanded = await expandLinks(text, cancelToken ?? CancelToken());\n",
+         "        final expanded = await expandLinks(myNameXrayJson(text), cancelToken ?? CancelToken());\n"),
+    ]:
+        assert s.count(a) == 1, a.strip()[:50]
+        s = s.replace(a, b)
+    return s
+edit("lib/features/profile/data/profile_parser.dart", xray_names)
+
 # 8. Экран запуска: туннель на тёмном фоне
 import zlib, struct
 def png(path, w, h, px):

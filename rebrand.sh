@@ -529,6 +529,27 @@ def all_profile(s):
     return s
 edit("lib/features/profile/data/profile_repository.dart", all_profile)
 
+# 20. Профили: справа число серверов и время обновления, пункт меню «Серверы» (без подключения)
+assert os.path.exists("lib/features/profile/widget/myvpn_profile_extras.dart"), "нет myvpn_profile_extras.dart"
+def tile(s):
+    for a, b in [
+        ("import 'package:hiddify/features/profile/model/profile_entity.dart';\n",
+         "import 'package:hiddify/features/profile/model/profile_entity.dart';\n"
+         "import 'package:hiddify/features/profile/widget/myvpn_profile_extras.dart';\n"),
+        ("    final nameText = Text(\n      profile.name,\n",
+         "    final nameText = MyNameRow(\n      profile: profile,\n      text: Text(\n      profile.name,\n"),
+        ("\n    );\n\n    final Widget? trailing = isMain",
+         "\n    ),\n    );\n\n    final Widget? trailing = isMain"),
+        ("      if (profile case RemoteProfileEntity())\n        AdaptiveMenuItem(\n          title: t.common.update,",
+         "      AdaptiveMenuItem(\n        title: 'Серверы',\n        leadingIcon: const Icon(Icons.dns_rounded),\n"
+         "        onTap: () => showMyServers(context, ref, profile),\n      ),\n"
+         "      if (profile case RemoteProfileEntity())\n        AdaptiveMenuItem(\n          title: t.common.update,"),
+    ]:
+        assert s.count(a) == 1, a.strip()[:50]
+        s = s.replace(a, b)
+    return s
+edit("lib/features/profile/widget/profile_tile.dart", tile)
+
 # 8. Экран запуска: туннель на тёмном фоне
 import zlib, struct
 def png(path, w, h, px):

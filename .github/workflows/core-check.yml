@@ -31,7 +31,7 @@ jobs:
         run: |
           [ -n "$NTFY_TOPIC" ] || { echo "::error::секрет NTFY_TOPIC не задан"; exit 1; }
           curl -fsS -H "Title: MyVPN-app: проверка связи" -H "Tags: white_check_mark" \
-            -d "Уведомления о новом ядре работают ✅" "https://ntfy.sh/$NTFY_TOPIC" >/dev/null
+            -d "Уведомления о новом ядре работают ✅" "https://ntfy.sh/$(printf %s "$NTFY_TOPIC" | tr -d '[:space:]')" >/dev/null
           echo "✅ пробное уведомление отправлено"
 
       - name: Compare versions
@@ -52,7 +52,7 @@ jobs:
           if [ -n "$NTFY_TOPIC" ]; then
             curl -fsS -H "Title: MyVPN-app: новое ядро $LATEST" -H "Tags: package" \
               -d "$MSG https://github.com/hiddify/hiddify-core/releases/tag/v$LATEST" \
-              "https://ntfy.sh/$NTFY_TOPIC" >/dev/null && echo "✅ уведомление в ntfy отправлено"
+              "https://ntfy.sh/$(printf %s "$NTFY_TOPIC" | tr -d '[:space:]')" >/dev/null && echo "✅ уведомление в ntfy отправлено"
           else
             echo "::warning::секрет NTFY_TOPIC не задан, уведомление в ntfy не отправлено"
           fi

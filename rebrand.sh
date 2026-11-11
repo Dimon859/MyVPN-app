@@ -617,6 +617,9 @@ edit("lib/features/profile/widget/profile_tile.dart", tile)
 #     Платные панели (Remnawave и др.) без него отдают пустую подписку или заглушку.
 MY_HWID = r"""
   // MyVPN: заголовки устройства для панелей подписок (HWID-лимит устройств)
+  static bool myHwidEnabled = true;
+  static Future<String>? _myIdF;
+  static Future<String> myHwid() => _myIdF ??= _myHwidHeaders().then((h) => h['x-hwid'] ?? '');
   static Future<Map<String, String>>? _myHw;
   static Future<Map<String, String>> _myHwidHeaders() => _myHw ??= () async {
     var id = '';
@@ -647,12 +650,62 @@ def hwid(s):
          "import 'package:hiddify/utils/custom_loggers.dart';\nimport 'package:shared_preferences/shared_preferences.dart';\nimport 'package:uuid/uuid.dart';\n"),
         ("  Future<Response> download(\n", MY_HWID.lstrip("\n") + "  Future<Response> download(\n"),
         ("      options: _options(url, userAgent: userAgent, credentials: credentials),\n    );\n  }\n",
-         "      options: _options(url, userAgent: userAgent, credentials: credentials)\n        ..headers?.addAll(await _myHwidHeaders()),\n    );\n  }\n"),
+         "      options: _options(url, userAgent: userAgent, credentials: credentials)\n        ..headers?.addAll(myHwidEnabled ? await _myHwidHeaders() : const <String, String>{}),\n    );\n  }\n"),
     ]:
         assert s.count(a) == 1, a.strip()[:50]
         s = s.replace(a, b)
     return s
 edit("lib/core/http_client/dio_http_client.dart", hwid)
+
+# 22. Настройки → Общие: «Отправлять HWID» (вкл/выкл) и «HWID устройства» (нажать — скопировать)
+def hwid_pref(s):
+    a = '  static final subscriptionUserAgent = PreferencesNotifier.create<String, String>("myvpn_sub_user_agent", "");\n'
+    assert s.count(a) == 1, "subscriptionUserAgent"
+    return s.replace(a, a + '  /// MyVPN: отправлять HWID устройства при загрузке подписок\n'
+                     '  static final myHwidEnabled = PreferencesNotifier.create<bool, bool>("myvpn_hwid_enabled", true);\n')
+edit("lib/core/preferences/general_preferences.dart", hwid_pref)
+def hwid_client(s):
+    a = "  setUserAgent();\n"
+    assert s.count(a) == 1, "setUserAgent"
+    return s.replace(a, a + "  DioHttpClient.myHwidEnabled = ref.read(Preferences.myHwidEnabled);\n"
+                     "  ref.listen(Preferences.myHwidEnabled, (_, next) => DioHttpClient.myHwidEnabled = next);\n")
+edit("lib/core/http_client/http_client_provider.dart", hwid_client)
+HWID_TILES = """          SwitchListTile.adaptive(
+            title: const Text('Отправлять HWID'),
+            subtitle: const Text('Номер устройства для подписок с лимитом устройств'),
+            secondary: const Icon(Icons.fingerprint_rounded),
+            value: ref.watch(Preferences.myHwidEnabled),
+            onChanged: ref.read(Preferences.myHwidEnabled.notifier).update,
+          ),
+          FutureBuilder<String>(
+            future: DioHttpClient.myHwid(),
+            builder: (context, snap) => ListTile(
+              leading: const Icon(Icons.badge_outlined),
+              title: const Text('HWID устройства'),
+              subtitle: Text(snap.data ?? '…', style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+              trailing: const Icon(Icons.copy_rounded, size: 20),
+              onTap: () {
+                final id = snap.data;
+                if (id == null || id.isEmpty) return;
+                Clipboard.setData(ClipboardData(text: id));
+                ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+                  const SnackBar(content: Text('HWID скопирован'), duration: Duration(seconds: 2)),
+                );
+              },
+            ),
+          ),
+"""
+def hwid_tiles(s):
+    for a, b in [
+        ("import 'package:flutter/material.dart';\n",
+         "import 'package:flutter/material.dart';\nimport 'package:flutter/services.dart';\nimport 'package:hiddify/core/http_client/dio_http_client.dart';\n"),
+        ("            presentChoice: (value) => _myUserAgents[value] ?? value,\n          ),\n",
+         "            presentChoice: (value) => _myUserAgents[value] ?? value,\n          ),\n" + HWID_TILES),
+    ]:
+        assert s.count(a) == 1, a.strip()[:50]
+        s = s.replace(a, b)
+    return s
+edit("lib/features/settings/overview/sections/general_page.dart", hwid_tiles)
 
 # 8. Экран запуска: туннель на тёмном фоне
 import zlib, struct

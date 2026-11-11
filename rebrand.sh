@@ -781,6 +781,57 @@ def xray_names(s):
     return s
 edit("lib/features/profile/data/profile_parser.dart", xray_names)
 
+# 24. Статистика трафика и резервная копия (Настройки → Общие)
+for f in ["lib/features/stats/myvpn_traffic.dart", "lib/features/settings/myvpn_backup.dart", "lib/features/profile/data/myvpn_marks.dart"]:
+    assert os.path.exists(f), "нет " + f
+def traffic_feed(s):
+    for a, b in [
+        ("import 'package:hiddify/features/stats/data/stats_data_providers.dart';\n",
+         "import 'package:hiddify/features/stats/data/stats_data_providers.dart';\nimport 'package:hiddify/features/stats/myvpn_traffic.dart';\n"),
+        ("          .map((event) => event.getOrElse((_) => SystemInfo.create()));\n",
+         "          .map((event) {\n"
+         "            final info = event.getOrElse((_) => SystemInfo.create());\n"
+         "            MyTraffic.feed(info.uplinkTotal.toInt(), info.downlinkTotal.toInt(), info.currentProfile); // MyVPN\n"
+         "            return info;\n"
+         "          });\n"),
+    ]:
+        assert s.count(a) == 1, a.strip()[:50]
+        s = s.replace(a, b)
+    return s
+edit("lib/features/stats/notifier/stats_notifier.dart", traffic_feed)
+MORE_TILES = """          ListTile(
+            leading: const Icon(Icons.data_usage_rounded),
+            title: const Text('Статистика трафика'),
+            subtitle: const Text('Сегодня, за месяц и по подпискам'),
+            onTap: () => showMyTraffic(context),
+          ),
+          ListTile(
+            leading: const Icon(Icons.save_alt_rounded),
+            title: const Text('Сохранить резервную копию'),
+            subtitle: const Text('Подписки, «Мои серверы», избранное — в файл'),
+            onTap: () => myExportBackup(context, ref),
+          ),
+          ListTile(
+            leading: const Icon(Icons.restore_rounded),
+            title: const Text('Восстановить из копии'),
+            subtitle: const Text('Добавит недостающие подписки и серверы'),
+            onTap: () => myImportBackup(context, ref),
+          ),
+"""
+def more_tiles(s):
+    for a, b in [
+        ("import 'package:hiddify/core/http_client/dio_http_client.dart';\n",
+         "import 'package:hiddify/core/http_client/dio_http_client.dart';\n"
+         "import 'package:hiddify/features/settings/myvpn_backup.dart';\n"
+         "import 'package:hiddify/features/stats/myvpn_traffic.dart';\n"),
+        ("                  const SnackBar(content: Text('HWID скопирован'), duration: Duration(seconds: 2)),\n                );\n              },\n            ),\n          ),\n",
+         "                  const SnackBar(content: Text('HWID скопирован'), duration: Duration(seconds: 2)),\n                );\n              },\n            ),\n          ),\n" + MORE_TILES),
+    ]:
+        assert s.count(a) == 1, a.strip()[:50]
+        s = s.replace(a, b)
+    return s
+edit("lib/features/settings/overview/sections/general_page.dart", more_tiles)
+
 # 8. Экран запуска: туннель на тёмном фоне
 import zlib, struct
 def png(path, w, h, px):

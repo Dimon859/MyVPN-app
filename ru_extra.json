@@ -52,7 +52,7 @@
   "pages.settings.routing.routeRule.duplicated": "Скопировано как новое правило: меняйте как хотите",
   "pages.settings.routing.routeRule.copyAll": "Копировать всё",
   "pages.settings.routing.routeRule.rule.builtinReadOnly": "Встроенное правило нельзя изменить. Сделайте его копию и редактируйте её.",
-  "pages.settings.routing.builtinRules.systemDirect.apple": "Сервисы Apple",
+  "pages.settings.routing.builtinRules.systemDirect.apple": "Сервисы Apple напрямую",
   "pages.settings.routing.builtinRules.systemDirect.microsoft": "Сервисы Microsoft",
   "pages.settings.routing.builtinRules.systemDirect.android": "Сервисы Android",
   "pages.settings.routing.builtinRules.systemDirect.linux": "Обновления Linux",
@@ -145,5 +145,6 @@
   "pages.settings.routing.balancerStrategy.stickySession": "Закреплённая сессия",
   "pages.settings.tlsTricks.padding.enable": "Включить заполнение (padding)",
   "pages.settings.tlsTricks.padding.size": "Размер заполнения",
-  "pages.settings.inbound.directPort": "Локальный порт (напрямую)"
+  "pages.settings.inbound.directPort": "Локальный порт (напрямую)",
+  "pages.settings.routing.builtinRules.bypassLan": "Локальная сеть и AirDrop напрямую"
 }

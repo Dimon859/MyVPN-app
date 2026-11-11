@@ -850,6 +850,183 @@ def more_tiles(s):
     return s
 edit("lib/features/settings/overview/sections/general_page.dart", more_tiles)
 
+# 25. Сервисы Apple: каждый можно пустить через VPN (по умолчанию все сервисы Apple напрямую)
+APPLE_RULES = {
+    "applePushVpn": ("Через VPN: уведомления Apple (пуши)",
+                     "domainSuffixes: ['push.apple.com', 'push-apple.com.akadns.net']"),
+    "appleICloudVpn": ("Через VPN: iCloud",
+                       "domainSuffixes: ['icloud.com', 'icloud-content.com', 'apple-cloudkit.com', 'icloud.apple.com']"),
+    "appleStoreVpn": ("Через VPN: App Store и обновления iOS",
+                      "domainSuffixes: ['apps.apple.com', 'itunes.apple.com', 'mzstatic.com', 'itunes.com', "
+                      "'appldnld.apple.com', 'updates.cdn-apple.com', 'swcdn.apple.com', 'swdist.apple.com', "
+                      "'mesu.apple.com', 'gdmf.apple.com']"),
+    "appleMediaVpn": ("Через VPN: Apple Music, TV и подкасты",
+                      "domainSuffixes: ['music.apple.com', 'tv.apple.com', 'podcasts.apple.com', 'aod.itunes.apple.com', "
+                      "'audio-ssl.itunes.apple.com', 'hls.itunes.apple.com', 'play.itunes.apple.com']"),
+}
+def apple_rules(s):
+    a = "  bypassLan(enabledByDefault: true),\n"
+    assert s.count(a) == 1, "bypassLan enum"
+    s = s.replace(a, "".join(f"  {k}(enabledByDefault: false),\n" for k in APPLE_RULES) + a)
+    a = "    bypassLan => t.pages.settings.routing.builtinRules.bypassLan,\n"
+    assert s.count(a) == 1, "bypassLan present"
+    s = s.replace(a, "".join(f"    {k} => '{v[0]}',\n" for k, v in APPLE_RULES.items()) + a)
+    a = "  Rule get rule => switch (this) {\n"
+    assert s.count(a) == 1, "Rule get rule"
+    s = s.replace(a, a + "".join(f"    {k} => Rule(outbound: Outbound.proxy, {v[1]}),\n" for k, v in APPLE_RULES.items()))
+    return s
+edit("lib/features/route_rules/notifier/rules_notifier.dart", apple_rules)
+
+# 26. Главный экран: панель под кнопкой (время сессии, график, сервер, белые списки, скорость)
+for f in ["lib/features/home/widget/myvpn_home_panel.dart", "lib/features/settings/myvpn_tools.dart", "lib/utils/myvpn_telegram.dart"]:
+    assert os.path.exists(f), "нет " + f
+def home_panel(s):
+    for a, b in [
+        ("import 'package:hiddify/features/home/widget/connection_button.dart';\n",
+         "import 'package:hiddify/features/home/widget/connection_button.dart';\nimport 'package:hiddify/features/home/widget/myvpn_home_panel.dart';\n"),
+        ("children: [ConnectionButton(), ActiveProxyDelayIndicator()],",
+         "children: [ConnectionButton(), ActiveProxyDelayIndicator(), MyHomePanel()],"),
+    ]:
+        assert s.count(a) == 1, a.strip()[:50]
+        s = s.replace(a, b)
+    return s
+edit("lib/features/home/widget/home_page.dart", home_panel)
+def session_feed(s):
+    for a, b in [
+        ("import 'package:hiddify/features/stats/myvpn_traffic.dart';\n",
+         "import 'package:hiddify/features/home/widget/myvpn_home_panel.dart';\nimport 'package:hiddify/features/stats/myvpn_traffic.dart';\n"),
+        ("            MyTraffic.feed(info.uplinkTotal.toInt(), info.downlinkTotal.toInt(), info.currentProfile); // MyVPN\n",
+         "            MyTraffic.feed(info.uplinkTotal.toInt(), info.downlinkTotal.toInt(), info.currentProfile); // MyVPN\n"
+         "            MySession.feedStats(info.uplink.toInt(), info.downlink.toInt()); // MyVPN\n"),
+    ]:
+        assert s.count(a) == 1, a.strip()[:50]
+        s = s.replace(a, b)
+    return s
+edit("lib/features/stats/notifier/stats_notifier.dart", session_feed)
+
+# 27. Telegram-канал как подписка
+def tg_url(s):
+    a = "    ProgressCallback? onReceiveProgress,\n  }) async {\n    final mode = proxyOnly\n"
+    assert s.count(a) == 1, "download start"
+    s = s.replace(a, "    ProgressCallback? onReceiveProgress,\n  }) async {\n"
+                     "    url = myTelegramUrl(url); // MyVPN: t.me/канал → страница с постами\n    final mode = proxyOnly\n")
+    a = "import 'package:hiddify/utils/custom_loggers.dart';\n"
+    assert s.count(a) == 1, "dio imports"
+    return s.replace(a, a + "import 'package:hiddify/utils/myvpn_telegram.dart';\n")
+edit("lib/core/http_client/dio_http_client.dart", tg_url)
+def tg_parse(s):
+    for a, b in [
+        ("import 'package:hiddify/utils/myvpn_xray_names.dart';\n",
+         "import 'package:hiddify/utils/myvpn_telegram.dart';\nimport 'package:hiddify/utils/myvpn_xray_names.dart';\n"),
+        ("        final expanded = await expandLinks(myNameXrayJson(text), cancelToken ?? CancelToken());\n",
+         "        final expanded = await expandLinks(myNameXrayJson(myTelegramLinks(text) ?? text), cancelToken ?? CancelToken());\n"),
+    ]:
+        assert s.count(a) == 1, a.strip()[:50]
+        s = s.replace(a, b)
+    return s
+edit("lib/features/profile/data/profile_parser.dart", tg_parse)
+
+# 28. Сводка после добавления подписки (число серверов, страны, срок, совпадения с другими)
+def add_summary(s):
+    for a, b in [
+        ("import 'package:hiddify/features/connection/notifier/connection_notifier.dart';\n",
+         "import 'package:hiddify/features/connection/notifier/connection_notifier.dart';\nimport 'package:hiddify/features/home/widget/myvpn_home_panel.dart';\n"),
+        ("          cancelToken: _cancelToken = CancelToken(),\n        );\n      } else {",
+         "          cancelToken: _cancelToken = CancelToken(),\n        );\n        MyAddSummary.prepare(rs.url); // MyVPN\n      } else {"),
+        ('              loggy.info("successfully added profile");\n',
+         '              loggy.info("successfully added profile");\n              MyAddSummary.commit(); // MyVPN\n'),
+    ]:
+        assert s.count(a) == 1, a.strip()[:50]
+        s = s.replace(a, b)
+    return s
+edit("lib/features/profile/notifier/profile_notifier.dart", add_summary)
+
+# 29. DNS: готовые варианты одним нажатием
+def dns_presets(s):
+    for a, b in [
+        ("import 'package:hiddify/features/settings/data/config_option_repository.dart';\n",
+         "import 'package:hiddify/features/settings/data/config_option_repository.dart';\nimport 'package:hiddify/features/settings/myvpn_tools.dart';\n"),
+        ("      body: ListView(\n        children: [\n",
+         "      body: ListView(\n        children: [\n          const MyDnsPresetsTile(),\n"),
+    ]:
+        assert s.count(a) == 1, a.strip()[:50]
+        s = s.replace(a, b)
+    return s
+edit("lib/features/settings/overview/sections/dns_options_page.dart", dns_presets)
+
+# 30. Настройки → Общие: страны, небезопасные, отпечаток TLS, таймер, белые списки, проверка сети
+def tools_tiles(s):
+    for a, b in [
+        ("import 'package:hiddify/features/settings/myvpn_backup.dart';\n",
+         "import 'package:hiddify/features/settings/myvpn_backup.dart';\nimport 'package:hiddify/features/settings/myvpn_tools.dart';\n"),
+        ("          ListTile(\n            leading: const Icon(Icons.data_usage_rounded),\n",
+         "          const MyToolsTiles(),\n          ListTile(\n            leading: const Icon(Icons.data_usage_rounded),\n"),
+    ]:
+        assert s.count(a) == 1, a.strip()[:50]
+        s = s.replace(a, b)
+    return s
+edit("lib/features/settings/overview/sections/general_page.dart", tools_tiles)
+
+# 31. Таймер VPN: расширение само отключается по файлам myvpn_stop_at / myvpn_daily_off в общей папке
+SWIFT_TIMER = """
+    // MyVPN: таймер «выключить через…» и «выключать каждый день в…» (файлы пишет приложение)
+    private var myStopTimer: DispatchSourceTimer?
+    private var myStartedAt = Date()
+
+    private func myStartStopTimer() {
+        myStartedAt = Date()
+        myStopTimer?.cancel()
+        let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
+        timer.schedule(deadline: .now() + 15, repeating: 15)
+        timer.setEventHandler { [weak self] in self?.myCheckStop() }
+        timer.resume()
+        myStopTimer = timer
+    }
+
+    private func myCheckStop() {
+        let dir = FilePath.sharedDirectory
+        let now = Date()
+        var stop = false
+        let stopAtURL = dir.appendingPathComponent("myvpn_stop_at")
+        if let text = try? String(contentsOf: stopAtURL, encoding: .utf8),
+           let at = Double(text.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            let when = Date(timeIntervalSince1970: at)
+            if when <= myStartedAt {
+                // таймер остался от прошлого подключения
+                try? FileManager.default.removeItem(at: stopAtURL)
+            } else if now >= when {
+                try? FileManager.default.removeItem(at: stopAtURL)
+                stop = true
+            }
+        }
+        let dailyURL = dir.appendingPathComponent("myvpn_daily_off")
+        if !stop, let text = try? String(contentsOf: dailyURL, encoding: .utf8) {
+            let parts = text.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: ":")
+            if parts.count == 2, let h = Int(parts[0]), let m = Int(parts[1]),
+               let off = Calendar.current.date(bySettingHour: h, minute: m, second: 0, of: now),
+               now >= off, now.timeIntervalSince(off) < 120, myStartedAt < off {
+                stop = true
+            }
+        }
+        if stop {
+            myStopTimer?.cancel()
+            myStopTimer = nil
+            cancelTunnelWithError(nil)
+        }
+    }
+"""
+def swift_timer(s):
+    for a, b in [
+        ("        try await super.startTunnel(options: options)\n",
+         "        try await super.startTunnel(options: options)\n        myStartStopTimer() // MyVPN\n"),
+        ("    override func handleAppMessage(_ messageData: Data) async -> Data? {\n",
+         SWIFT_TIMER.lstrip("\n") + "\n    override func handleAppMessage(_ messageData: Data) async -> Data? {\n"),
+    ]:
+        assert s.count(a) == 1, a.strip()[:50]
+        s = s.replace(a, b)
+    return s
+edit("ios/HiddifyPacketTunnel/PacketTunnelProvider.swift", swift_timer)
+
 # 8. Экран запуска: туннель на тёмном фоне
 import zlib, struct
 def png(path, w, h, px):

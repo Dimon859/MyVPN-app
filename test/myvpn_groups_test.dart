@@ -1,5 +1,6 @@
 // MyVPN: разделы, поиск и фильтры в списке серверов
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hiddify/features/profile/data/myvpn_marks.dart';
 import 'package:hiddify/features/profile/widget/myvpn_profile_extras.dart';
 
 MyServer _s(String name, {String type = 'vless', String server = '1.1.1.1'}) =>

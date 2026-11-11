@@ -650,7 +650,7 @@ def hwid(s):
          "import 'package:hiddify/utils/custom_loggers.dart';\nimport 'package:shared_preferences/shared_preferences.dart';\nimport 'package:uuid/uuid.dart';\n"),
         ("  Future<Response> download(\n", MY_HWID.lstrip("\n") + "  Future<Response> download(\n"),
         ("      options: _options(url, userAgent: userAgent, credentials: credentials),\n    );\n  }\n",
-         "      options: _options(url, userAgent: userAgent, credentials: credentials)\n        ..headers?.addAll(myHwidEnabled ? await _myHwidHeaders() : const <String, String>{}),\n    );\n  }\n"),
+         "      options: _options(url, userAgent: userAgent, credentials: credentials)\n        ..headers?.addAll({\n          // MyVPN: названия серверов и описания на русском, если панель их переводит\n          'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.8',\n          if (myHwidEnabled) ...await _myHwidHeaders(),\n        }),\n    );\n  }\n"),
     ]:
         assert s.count(a) == 1, a.strip()[:50]
         s = s.replace(a, b)

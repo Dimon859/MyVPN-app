@@ -129,6 +129,7 @@ Future<void> showMyServers(BuildContext context, WidgetRef ref, ProfileEntity pr
     builder: (context) {
       final theme = Theme.of(context);
       final links = [for (final s in servers) ?myOutboundToLink({...s.json, 'tag': s.name})];
+      final groups = myGroupServers(servers);
       return AlertDialog(
         title: Text('${profile.name}\n${myServersWord(servers.length)} · ${myUpdatedText(profile.lastUpdate)}'),
         titleTextStyle: theme.textTheme.titleMedium,
@@ -139,14 +140,20 @@ Future<void> showMyServers(BuildContext context, WidgetRef ref, ProfileEntity pr
               ? const Padding(padding: EdgeInsets.all(24), child: Text('Серверов нет'))
               : ListView.builder(
                   shrinkWrap: true,
-                  itemCount: servers.length,
-                  itemBuilder: (context, i) => ListTile(
-                    dense: true,
-                    title: Text(servers[i].name, maxLines: 1, overflow: TextOverflow.ellipsis),
-                    subtitle: Text(servers[i].info),
-                    trailing: const Icon(Icons.chevron_right_rounded),
-                    onTap: () => showMyServer(context, servers[i]),
-                  ),
+                  itemCount: groups.length,
+                  itemBuilder: (context, i) {
+                    final g = groups[i];
+                    if (g.servers.length == 1) return _myServerTile(context, g.servers.first);
+                    return ExpansionTile(
+                      initiallyExpanded: groups.length == 1,
+                      shape: const Border(),
+                      collapsedShape: const Border(),
+                      title: Text(g.name, maxLines: 2, overflow: TextOverflow.ellipsis),
+                      subtitle: Text(myServersWord(g.servers.length)),
+                      childrenPadding: const EdgeInsetsDirectional.only(start: 12),
+                      children: [for (final s in g.servers) _myServerTile(context, s)],
+                    );
+                  },
                 ),
         ),
         actions: [
@@ -160,6 +167,24 @@ Future<void> showMyServers(BuildContext context, WidgetRef ref, ProfileEntity pr
       );
     },
   );
+}
+
+Widget _myServerTile(BuildContext context, MyServer server) => ListTile(
+  dense: true,
+  title: Text(server.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+  subtitle: Text(server.info),
+  trailing: const Icon(Icons.chevron_right_rounded),
+  onTap: () => showMyServer(context, server),
+);
+
+/// Серверы по разделам: «Автовыбор [1]», «Автовыбор [2]» → раздел «Автовыбор»; порядок как в подписке.
+List<({String name, List<MyServer> servers})> myGroupServers(List<MyServer> servers) {
+  final map = <String, List<MyServer>>{};
+  for (final s in servers) {
+    final key = s.name.replaceFirst(RegExp(r'\s*(\[\d+(\.\d+)?\]|\(\d+\))$'), '').trim();
+    map.putIfAbsent(key.isEmpty ? s.name : key, () => []).add(s);
+  }
+  return [for (final e in map.entries) (name: e.key, servers: e.value)];
 }
 
 void _myCopy(BuildContext context, String text, String message) {

@@ -50,13 +50,17 @@ String myNameXrayJson(String text) {
     for (var i = 0; i < proxies.length; i++) {
       final o = proxies[i];
       final key = jsonEncode(Map.of(o)..remove('tag'));
-      var name = names[key];
-      if (name == null) {
+      final known = names[key];
+      final String name;
+      if (known != null) {
+        name = known;
+      } else {
         final base = proxies.length == 1 ? remarks : '$remarks [${i + 1}]';
-        name = base;
-        for (var n = 2; used.contains(name); n++) {
-          name = '$base ($n)';
+        var candidate = base;
+        for (var n = 2; used.contains(candidate); n++) {
+          candidate = '$base ($n)';
         }
+        name = candidate;
         used.add(name);
         names[key] = name;
       }

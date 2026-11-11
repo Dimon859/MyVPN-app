@@ -1,0 +1,33 @@
+name: Check code
+
+# Быстрая проверка без Mac: применяет rebrand.sh, ищет ошибки в коде и гоняет тесты MyVPN.
+# Не тратит минуты macOS и не собирает приложение.
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: subosito/flutter-action@v2.21.0
+        with:
+          flutter-version: '3.38.5'
+          channel: 'stable'
+          cache: true
+
+      - name: Rebrand
+        env:
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: bash rebrand.sh
+
+      - name: Prepare (pub get, code generation, translations)
+        run: make get gen translate
+
+      - name: Analyze (только ошибки)
+        run: flutter analyze --no-fatal-warnings --no-fatal-infos lib test/myvpn_link_parser_test.dart && echo "✅ ошибок в коде нет"
+
+      - name: Tests MyVPN
+        run: flutter test test/myvpn_link_parser_test.dart && echo "✅ тесты пройдены"

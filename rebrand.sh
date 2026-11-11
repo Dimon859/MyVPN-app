@@ -249,13 +249,21 @@ edit("lib/core/http_client/http_client_provider.dart", ua_client)
 UA_LIST = """
 
 // MyVPN: варианты User-Agent для подписок (значение → подпись)
+// Панель подписки по User-Agent решает, в каком формате отдать список серверов.
 const _myUserAgents = {
   '': 'Стандартный',
   'Happ/3.5.0': 'Happ',
-  'v2rayNG/1.10.5': 'v2rayNG',
+  'INCY/2.4.0': 'Incy',
+  'Shadowrocket/2.2.65 CFNetwork/3826.500.131 Darwin/24.5.0': 'Shadowrocket',
+  'Streisand/1.6.40': 'Streisand',
+  'v2RayTun/5.10.62': 'v2RayTun',
+  'V2Box/1.5.0': 'V2Box',
+  'FoXray/1.9.0': 'FoXray',
   'Karing/1.1.2': 'Karing',
-  'sing-box 1.12.0': 'sing-box',
-  'clash.meta': 'Clash Meta',
+  'v2rayNG/1.10.5': 'v2rayNG',
+  'sing-box 1.12.0': 'sing-box (JSON)',
+  'clash.meta': 'Clash Meta (YAML)',
+  'Stash/2.4.0 Clash/1.9.0': 'Stash',
 };
 """
 def ua_tile(s):
@@ -293,6 +301,99 @@ def geo(s):
         s = s.replace(a, b)
     return s
 edit("lib/features/route_rules/notifier/rules_notifier.dart", geo)
+
+# 17. Выпадающие меню поверх всего экрана (раньше нижнее меню прятало последний пункт)
+def menus(s):
+    a = "    final menu = MenuAnchor(\n"
+    assert s.count(a) == 1, "MenuAnchor"
+    return s.replace(a, a + "      useRootOverlay: true, // MyVPN: меню не прячется под нижней панелью\n")
+edit("lib/core/widget/adaptive_menu.dart", menus)
+
+# 18. Ссылки «Добавить в …» от других приложений (Буфер обмена, QR-код)
+MY_LINKS = r"""
+  // MyVPN: ссылки других клиентов → адрес подписки
+  static const _myPathSchemes = {'happ', 'incy', 'streisand', 'shadowrocket', 'rabbithole', 'v2raytun', 'v2box'};
+  static const _myQuerySchemes = {
+    'karing', 'v2box', 'foxray', 'sn', 'stash', 'clashx', 'clashmi', 'flclash', 'flclashx',
+    'koala-clash', 'clash-verge', 'mihomo', 'nekobox', 'v2rayng', 'v2rayn', 'v2raytun', 'happ', 'incy', 'sing-box',
+  };
+
+  static String _myB64(String s) {
+    var t = s.trim().replaceAll('-', '+').replaceAll('_', '/');
+    while (t.length % 4 != 0) {
+      t += '=';
+    }
+    return safeDecodeBase64(t);
+  }
+
+  static ({String scheme, String rest})? _mySplit(String link) {
+    final m = RegExp(r'^([a-zA-Z][a-zA-Z0-9+.-]*)://(.*)$', dotAll: true).firstMatch(link.trim());
+    if (m == null) return null;
+    return (scheme: m.group(1)!.toLowerCase(), rest: m.group(2)!);
+  }
+
+  static ProfileLink? _myLink(String url, String name) {
+    var u = url.trim();
+    if (!u.contains('://') && u.toLowerCase().startsWith('http')) u = Uri.decodeComponent(u);
+    if (!RegExp(r'^https?://', caseSensitive: false).hasMatch(u)) return null;
+    return (url: u, name: name.isEmpty ? '' : Uri.decodeComponent(name));
+  }
+
+  static ProfileLink? myDeep(String link) {
+    final p = _mySplit(link);
+    if (p == null) return null;
+    final hash = p.rest.indexOf('#');
+    final body = hash >= 0 ? p.rest.substring(0, hash) : p.rest;
+    final name = hash >= 0 ? p.rest.substring(hash + 1) : '';
+    // Shadowrocket: sub://BASE64(адрес)#Имя
+    if (p.scheme == 'sub') {
+      final decoded = _myB64(body);
+      return decoded.contains('://') ? _myLink(decoded, name) : null;
+    }
+    // happ://add/АДРЕС, incy://import/АДРЕС, streisand://import/АДРЕС#Имя, shadowrocket://add/sub://…
+    if (_myPathSchemes.contains(p.scheme)) {
+      final m = RegExp(r'^(?:add|import|install-sub|sub/add)/+(.+)$', caseSensitive: false, dotAll: true).firstMatch(p.rest);
+      if (m != null) {
+        final inner = m.group(1)!;
+        if (inner.toLowerCase().startsWith('sub://')) return myDeep(inner);
+        final h = inner.indexOf('#');
+        final r = _myLink(h >= 0 ? inner.substring(0, h) : inner, h >= 0 ? inner.substring(h + 1) : '');
+        if (r != null) return r;
+      }
+    }
+    // karing://install-config?url=…&name=…, v2box://install-sub?url=…, foxray://yiguo.dev/sub/add/?url=…#Имя и т. п.
+    if (_myQuerySchemes.contains(p.scheme)) {
+      final uri = Uri.tryParse(link.trim());
+      final url = uri?.queryParameters['url'];
+      if (url != null && url.isNotEmpty) return _myLink(url, uri!.queryParameters['name'] ?? uri.fragment);
+    }
+    return null;
+  }
+
+  /// incy://add/vless://… и подобные: вынуть сам конфиг
+  static String myUnwrapConfig(String input) {
+    final p = _mySplit(input);
+    if (p == null || !_myPathSchemes.contains(p.scheme)) return input;
+    final m = RegExp(r'^(?:add|import)/+(.+)$', caseSensitive: false, dotAll: true).firstMatch(p.rest);
+    if (m == null) return input;
+    final inner = m.group(1)!;
+    return inner.contains('://') ? inner : _myB64(inner);
+  }
+"""
+def links(s):
+    for a, b in [
+        ("    return simple(link) ?? deep(link);\n", "    return simple(link) ?? myDeep(link) ?? deep(link);\n"),
+        ("  static ProfileLink? simple(String link) {\n", MY_LINKS.lstrip("\n") + "\n  static ProfileLink? simple(String link) {\n"),
+    ]:
+        assert s.count(a) == 1, a.strip()[:40]
+        s = s.replace(a, b)
+    return s
+edit("lib/utils/link_parsers.dart", links)
+def unwrap(s):
+    a = "task = _profilesRepo.addLocal(safeDecodeBase64(rawInput)).map((_) => unit);"
+    assert s.count(a) == 1, "addLocal"
+    return s.replace(a, "task = _profilesRepo.addLocal(safeDecodeBase64(LinkParser.myUnwrapConfig(rawInput.trim()))).map((_) => unit);")
+edit("lib/features/profile/notifier/profile_notifier.dart", unwrap)
 
 # 8. Экран запуска: туннель на тёмном фоне
 import zlib, struct

@@ -14,7 +14,7 @@ on:
         default: 'HH34UVC32L'
       app_name:
         description: 'Название под иконкой на iPhone'
-        default: 'MyVPN'
+        default: 'Tunnex'
       app_version:
         description: 'Версия приложения (например 1.0.0)'
         default: '1.2.0'
@@ -28,7 +28,7 @@ jobs:
       GROUP: ${{ inputs.app_group }}
       TEAM: ${{ inputs.team_id }}
       APPNAME: ${{ inputs.app_name }}
-      IPA: MyVPN-${{ inputs.app_version }}-b${{ github.run_number }}
+      IPA: ${{ inputs.app_name }}-${{ inputs.app_version }}-b${{ github.run_number }}
     steps:
       - uses: actions/checkout@v6
 
@@ -56,7 +56,7 @@ jobs:
           grep -n "$GROUP" ios/Runner/Runner.entitlements ios/HiddifyPacketTunnel/HiddifyPacketTunnel.entitlements ios/Shared/FilePath.swift
           [ "$(grep -c "$GROUP" ios/Runner/Runner.entitlements ios/HiddifyPacketTunnel/HiddifyPacketTunnel.entitlements ios/Shared/FilePath.swift | awk -F: '{s+=$2} END {print s}')" -ge 3 ] || { echo "::error::App Group не подставилась"; exit 1; }
 
-      - name: Rebrand to MyVPN
+      - name: Rebrand
         env:
           REPO_URL: ${{ github.server_url }}/${{ github.repository }}
         run: bash rebrand.sh

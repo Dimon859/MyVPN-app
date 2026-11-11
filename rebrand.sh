@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # MyVPN: замена всего видимого «Hiddify» при сборке (код форка остаётся как у оригинала)
 set -euo pipefail
-APPNAME="${APPNAME:-MyVPN}"
+APPNAME="${APPNAME:-Tunnex}"
 REPO_URL="${REPO_URL:-https://github.com/Dimon859/MyVPN-app}"
 
 python3 - "$APPNAME" "$REPO_URL" <<'PY'
@@ -392,7 +392,7 @@ edit("lib/utils/link_parsers.dart", links)
 def unwrap(s):
     a = "task = _profilesRepo.addLocal(safeDecodeBase64(rawInput)).map((_) => unit);"
     assert s.count(a) == 1, "addLocal"
-    return s.replace(a, "task = _profilesRepo.addLocal(safeDecodeBase64(LinkParser.myUnwrapConfig(rawInput.trim()))).map((_) => unit);")
+    return s.replace(a, "task = _profilesRepo.myAddToMine(safeDecodeBase64(LinkParser.myUnwrapConfig(rawInput.trim())));")
 edit("lib/features/profile/notifier/profile_notifier.dart", unwrap)
 
 # 19. Общий профиль «Все подписки»: серверы всех подписок в одном профиле,
@@ -455,32 +455,7 @@ MY_ALL = r"""
       for (final p in others) {
         final file = _profilePathResolver.file(p.id);
         if (!await file.exists()) continue;
-        Object? json;
-        try {
-          json = jsonDecode(await file.readAsString());
-        } catch (_) {
-          continue;
-        }
-        if (json is! Map<String, dynamic>) continue;
-        for (final key in const ['outbounds', 'endpoints']) {
-          final list = json[key];
-          if (list is! List) continue;
-          for (final item in list) {
-            if (item is! Map<String, dynamic>) continue;
-            if (_mySkipTypes.contains(item['type'])) continue;
-            final copy = Map<String, dynamic>.of(item);
-            final tag = (copy.remove('tag') ?? '').toString();
-            // один и тот же сервер из разных подписок — только один раз
-            if (!seen.add('$key ${jsonEncode(copy)}')) continue;
-            final base = tag.isEmpty ? 'proxy' : tag;
-            var t = base;
-            for (var n = 2; !tags.add(t); n++) {
-              t = '$base ($n)';
-            }
-            copy['tag'] = t;
-            (key == 'outbounds' ? outbounds : endpoints).add(copy);
-          }
-        }
+        _myCollect(await file.readAsString(), outbounds, endpoints, seen, tags);
       }
       if (outbounds.isEmpty && endpoints.isEmpty) return;
       final content = jsonEncode({'outbounds': outbounds, if (endpoints.isNotEmpty) 'endpoints': endpoints});
@@ -515,6 +490,90 @@ MY_ALL = r"""
       }
     }
   }
+  /// Добавляет серверы из сохранённого JSON профиля, без дублей и с уникальными именами.
+  void _myCollect(
+    String text,
+    List<Map<String, dynamic>> outbounds,
+    List<Map<String, dynamic>> endpoints,
+    Set<String> seen,
+    Set<String> tags,
+  ) {
+    Object? json;
+    try {
+      json = jsonDecode(text);
+    } catch (_) {
+      return;
+    }
+    if (json is! Map<String, dynamic>) return;
+    for (final key in const ['outbounds', 'endpoints']) {
+      final list = json[key];
+      if (list is! List) continue;
+      for (final item in list) {
+        if (item is! Map<String, dynamic>) continue;
+        if (_mySkipTypes.contains(item['type'])) continue;
+        final copy = Map<String, dynamic>.of(item);
+        final tag = (copy.remove('tag') ?? '').toString();
+        // один и тот же сервер — только один раз
+        if (!seen.add('$key ${jsonEncode(copy)}')) continue;
+        final base = tag.isEmpty ? 'proxy' : tag;
+        var t = base;
+        for (var n = 2; !tags.add(t); n++) {
+          t = '$base ($n)';
+        }
+        copy['tag'] = t;
+        (key == 'outbounds' ? outbounds : endpoints).add(copy);
+      }
+    }
+  }
+
+  // ----- «Мои серверы»: всё, что добавлено не ссылкой на подписку, собирается в одну строку -----
+  static const myMineName = 'Мои серверы';
+
+  bool _myIsMine(ProfileEntity p) =>
+      p is LocalProfileEntity && (p.userOverride?.name == myMineName || p.name == myMineName);
+
+  @override
+  TaskEither<ProfileFailure, Unit> myAddToMine(String content) => TaskEither.tryCatch(
+    () async {
+      const tmpId = 'myvpn-mine-new';
+      final inFile = _profilePathResolver.tempFile(tmpId);
+      final outFile = _profilePathResolver.file(tmpId);
+      try {
+        await inFile.writeAsString(content);
+        (await validateConfig(outFile.path, inFile.path, null, false).run()).getOrElse((l) => throw l);
+        final outbounds = <Map<String, dynamic>>[];
+        final endpoints = <Map<String, dynamic>>[];
+        final seen = <String>{};
+        final tags = <String>{};
+        final entries = await _profileDataSource
+            .watchAll(sort: ProfilesSort.lastUpdate, sortMode: SortMode.ascending)
+            .first;
+        final mine = [for (final e in entries) ?_readable(e)].where(_myIsMine).firstOrNull;
+        if (mine != null) {
+          final old = _profilePathResolver.file(mine.id);
+          if (await old.exists()) _myCollect(await old.readAsString(), outbounds, endpoints, seen, tags);
+        }
+        final before = outbounds.length + endpoints.length;
+        _myCollect(await outFile.readAsString(), outbounds, endpoints, seen, tags);
+        if (outbounds.isEmpty && endpoints.isEmpty) throw const ProfileFailure.invalidConfig();
+        final merged = jsonEncode({'outbounds': outbounds, if (endpoints.isNotEmpty) 'endpoints': endpoints});
+        const override = UserOverride(name: myMineName);
+        if (mine == null) {
+          (await addLocal(merged, userOverride: override).run()).getOrElse((l) => throw l);
+        } else {
+          (await offlineUpdate(mine.copyWith(userOverride: mine.userOverride ?? override), merged).run())
+              .getOrElse((l) => throw l);
+          await setAsActive(mine.id).run();
+        }
+        loggy.info('MyVPN: в «Мои серверы» добавлено: ${outbounds.length + endpoints.length - before}');
+        return unit;
+      } finally {
+        if (inFile.existsSync()) inFile.deleteSync();
+        if (outFile.existsSync()) outFile.deleteSync();
+      }
+    },
+    (e, st) => e is ProfileFailure ? e : ProfileFailure.unexpected(e, st),
+  );
   // ===== конец MyVPN =====
 
 """
@@ -527,7 +586,11 @@ def all_profile(s):
         assert s.count(a) == 1, a.strip()[:50]
         s = s.replace(a, b)
     return s
-edit("lib/features/profile/data/profile_repository.dart", all_profile)
+def mine_iface(s):
+    a = "  TaskEither<ProfileFailure, String> addLocal(String content, {UserOverride? userOverride});\n"
+    assert s.count(a) == 1, "addLocal interface"
+    return s.replace(a, a + "  /// MyVPN: добавить серверы в профиль «Мои серверы»\n  TaskEither<ProfileFailure, Unit> myAddToMine(String content);\n")
+edit("lib/features/profile/data/profile_repository.dart", lambda s: mine_iface(all_profile(s)))
 
 # 20. Профили: справа число серверов и время обновления, пункт меню «Серверы» (без подключения)
 assert os.path.exists("lib/features/profile/widget/myvpn_profile_extras.dart"), "нет myvpn_profile_extras.dart"

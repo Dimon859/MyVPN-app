@@ -613,6 +613,47 @@ def tile(s):
     return s
 edit("lib/features/profile/widget/profile_tile.dart", tile)
 
+# 21. HWID устройства при загрузке подписок (x-hwid и др.), как у Happ / v2RayTun / Incy.
+#     Платные панели (Remnawave и др.) без него отдают пустую подписку или заглушку.
+MY_HWID = r"""
+  // MyVPN: заголовки устройства для панелей подписок (HWID-лимит устройств)
+  static Future<Map<String, String>>? _myHw;
+  static Future<Map<String, String>> _myHwidHeaders() => _myHw ??= () async {
+    var id = '';
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      id = prefs.getString('myvpn_hwid') ?? '';
+      if (!RegExp(r'^[a-zA-Z0-9=-]{10,64}$').hasMatch(id)) {
+        id = const Uuid().v4().replaceAll('-', '');
+        await prefs.setString('myvpn_hwid', id);
+      }
+    } catch (_) {
+      id = const Uuid().v4().replaceAll('-', '');
+    }
+    final os = Platform.isIOS ? 'iOS' : (Platform.isAndroid ? 'Android' : Platform.operatingSystem);
+    final ver = RegExp(r'\d+(\.\d+)*').firstMatch(Platform.operatingSystemVersion)?.group(0) ?? '';
+    return {
+      'x-hwid': id,
+      'x-device-os': os,
+      if (ver.isNotEmpty) 'x-ver-os': ver,
+      'x-device-model': Platform.isIOS ? 'iPhone' : os,
+    };
+  }();
+
+"""
+def hwid(s):
+    for a, b in [
+        ("import 'package:hiddify/utils/custom_loggers.dart';\n",
+         "import 'package:hiddify/utils/custom_loggers.dart';\nimport 'package:shared_preferences/shared_preferences.dart';\nimport 'package:uuid/uuid.dart';\n"),
+        ("  Future<Response> download(\n", MY_HWID.lstrip("\n") + "  Future<Response> download(\n"),
+        ("      options: _options(url, userAgent: userAgent, credentials: credentials),\n    );\n  }\n",
+         "      options: _options(url, userAgent: userAgent, credentials: credentials)\n        ..headers?.addAll(await _myHwidHeaders()),\n    );\n  }\n"),
+    ]:
+        assert s.count(a) == 1, a.strip()[:50]
+        s = s.replace(a, b)
+    return s
+edit("lib/core/http_client/dio_http_client.dart", hwid)
+
 # 8. Экран запуска: туннель на тёмном фоне
 import zlib, struct
 def png(path, w, h, px):

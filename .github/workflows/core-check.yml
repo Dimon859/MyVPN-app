@@ -7,6 +7,11 @@ on:
   schedule:
     - cron: '41 6 * * 4'   # каждый четверг
   workflow_dispatch:
+    inputs:
+      test:
+        description: 'Отправить пробное уведомление в ntfy'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -20,6 +25,14 @@ jobs:
       NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
     steps:
       - uses: actions/checkout@v6
+
+      - name: Test notification
+        if: inputs.test
+        run: |
+          [ -n "$NTFY_TOPIC" ] || { echo "::error::секрет NTFY_TOPIC не задан"; exit 1; }
+          curl -fsS -H "Title: MyVPN-app: проверка связи" -H "Tags: white_check_mark" \
+            -d "Уведомления о новом ядре работают ✅" "https://ntfy.sh/$NTFY_TOPIC" >/dev/null
+          echo "✅ пробное уведомление отправлено"
 
       - name: Compare versions
         run: |

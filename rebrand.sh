@@ -398,8 +398,10 @@ edit("lib/features/profile/notifier/profile_notifier.dart", unwrap)
 # 19. Общий профиль «Все подписки»: серверы всех подписок в одном профиле,
 #     сам пересобирается при добавлении, обновлении и удалении подписок
 MY_ALL = r"""
-  // ===== MyVPN: общий профиль «Все подписки» =====
+
+  // ===== MyVPN: общие профили «Все подписки» и «Избранное» =====
   static const myAllName = 'Все подписки';
+  static const myFavName = 'Избранное';
   static const _mySkipTypes = {'selector', 'urltest', 'direct', 'block', 'dns'};
   StreamSubscription<dynamic>? _myAllSub;
   Timer? _myAllTimer;
@@ -407,8 +409,10 @@ MY_ALL = r"""
   bool _myAllBusy = false;
   bool _myAllAgain = false;
 
-  bool _myIsAll(ProfileEntity p) =>
-      p is LocalProfileEntity && (p.userOverride?.name == myAllName || p.name == myAllName);
+  bool _myIsNamed(ProfileEntity p, String name) =>
+      p is LocalProfileEntity && (p.userOverride?.name == name || p.name == name);
+  bool _myIsAll(ProfileEntity p) => _myIsNamed(p, myAllName);
+  bool _myIsSpecial(ProfileEntity p) => _myIsNamed(p, myAllName) || _myIsNamed(p, myFavName);
 
   void _myWatchAll() {
     if (kIsWeb || _myAllSub != null) return;
@@ -416,7 +420,7 @@ MY_ALL = r"""
         .watchAll(sort: ProfilesSort.lastUpdate, sortMode: SortMode.ascending)
         .listen(
           (entries) {
-            final others = [for (final e in entries) ?_readable(e)].where((p) => !_myIsAll(p)).toList()
+            final others = [for (final e in entries) ?_readable(e)].where((p) => !_myIsSpecial(p)).toList()
               ..sort((a, b) => a.id.compareTo(b.id));
             final sig = [for (final p in others) '${p.id}@${p.lastUpdate.millisecondsSinceEpoch}'].join('|');
             if (sig == _myAllSig) return;
@@ -428,6 +432,64 @@ MY_ALL = r"""
         );
   }
 
+  /// Отметки «избранное» / «исключить» поменялись: применить ко всем профилям и пересобрать общие.
+  @override
+  Future<void> myMarksChanged() async {
+    try {
+      await MyMarks.load();
+      final dir = _profilePathResolver.directory;
+      if (await dir.exists()) {
+        await for (final f in dir.list()) {
+          if (f is File && f.path.endsWith('.json') && !f.path.endsWith('.tmp.json')) {
+            await myApplyHiddenToFile(f.path);
+          }
+        }
+      }
+    } catch (e, st) {
+      loggy.warning('MyVPN: отметки не применены', e, st);
+    }
+    // общие профили пересобираются в фоне, файлы подписок уже обновлены
+    unawaited(_myRebuildAll());
+  }
+
+  /// Создать, обновить или удалить (если серверов нет) общий профиль [name].
+  Future<void> _myUpsert(
+    String name,
+    List<ProfileEntity> existing,
+    List<Map<String, dynamic>> outbounds,
+    List<Map<String, dynamic>> endpoints,
+  ) async {
+    if (outbounds.isEmpty && endpoints.isEmpty) {
+      for (final p in existing) {
+        await deleteById(p.id, p.active).run();
+      }
+      return;
+    }
+    final content = jsonEncode({'outbounds': outbounds, if (endpoints.isNotEmpty) 'endpoints': endpoints});
+    final override = UserOverride(name: name);
+    final count = outbounds.length + endpoints.length;
+    if (existing.isEmpty) {
+      final res = await addLocal(content, userOverride: override).run();
+      await res.match(
+        (l) async => loggy.warning('MyVPN: «$name» не создан: $l'),
+        (id) async {
+          await setPinned(id, true).run();
+          loggy.info('MyVPN: «$name» создан, серверов: $count');
+        },
+      );
+    } else {
+      final cur = existing.first;
+      final res = await offlineUpdate(cur.copyWith(userOverride: cur.userOverride ?? override), content).run();
+      res.match(
+        (l) => loggy.warning('MyVPN: «$name» не обновлён: $l'),
+        (_) => loggy.info('MyVPN: «$name» обновлён, серверов: $count'),
+      );
+      for (final extra in existing.skip(1)) {
+        await deleteById(extra.id, extra.active).run();
+      }
+    }
+  }
+
   Future<void> _myRebuildAll() async {
     if (_myAllBusy) {
       _myAllAgain = true;
@@ -435,53 +497,37 @@ MY_ALL = r"""
     }
     _myAllBusy = true;
     try {
+      await MyMarks.load();
       final entries = await _profileDataSource
           .watchAll(sort: ProfilesSort.lastUpdate, sortMode: SortMode.ascending)
           .first;
       final profiles = [for (final e in entries) ?_readable(e)];
-      final existing = profiles.where(_myIsAll).toList();
-      final others = profiles.where((p) => !_myIsAll(p)).toList();
-      // общий профиль нужен, только когда подписок хотя бы две
-      if (others.length < 2) {
-        for (final p in existing) {
-          await deleteById(p.id, p.active).run();
-        }
-        return;
-      }
-      final outbounds = <Map<String, dynamic>>[];
-      final endpoints = <Map<String, dynamic>>[];
-      final seen = <String>{};
-      final tags = <String>{};
+      final others = profiles.where((p) => !_myIsSpecial(p)).toList();
+      final texts = <String>[];
       for (final p in others) {
         final file = _profilePathResolver.file(p.id);
-        if (!await file.exists()) continue;
-        _myCollect(await file.readAsString(), outbounds, endpoints, seen, tags);
+        if (await file.exists()) texts.add(await file.readAsString());
       }
-      if (outbounds.isEmpty && endpoints.isEmpty) return;
-      final content = jsonEncode({'outbounds': outbounds, if (endpoints.isNotEmpty) 'endpoints': endpoints});
-      const override = UserOverride(name: myAllName);
-      if (existing.isEmpty) {
-        final res = await addLocal(content, userOverride: override).run();
-        await res.match(
-          (l) async => loggy.warning('MyVPN: общий профиль не создан: $l'),
-          (id) async {
-            await setPinned(id, true).run();
-            loggy.info('MyVPN: общий профиль создан, серверов: ${outbounds.length + endpoints.length}');
-          },
-        );
-      } else {
-        final cur = existing.first;
-        final res = await offlineUpdate(cur.copyWith(userOverride: cur.userOverride ?? override), content).run();
-        res.match(
-          (l) => loggy.warning('MyVPN: общий профиль не обновлён: $l'),
-          (_) => loggy.info('MyVPN: общий профиль обновлён, серверов: ${outbounds.length + endpoints.length}'),
-        );
-        for (final extra in existing.skip(1)) {
-          await deleteById(extra.id, extra.active).run();
+      // «Все подписки» — когда подписок хотя бы две
+      final all = (outbounds: <Map<String, dynamic>>[], endpoints: <Map<String, dynamic>>[]);
+      if (others.length >= 2) {
+        final seen = <String>{}, tags = <String>{};
+        for (final t in texts) {
+          _myCollect(t, all.outbounds, all.endpoints, seen, tags);
         }
       }
+      await _myUpsert(myAllName, profiles.where((p) => _myIsNamed(p, myAllName)).toList(), all.outbounds, all.endpoints);
+      // «Избранное» — серверы, отмеченные звёздочкой, из всех подписок
+      final fav = (outbounds: <Map<String, dynamic>>[], endpoints: <Map<String, dynamic>>[]);
+      if (MyMarks.fav.isNotEmpty) {
+        final seen = <String>{}, tags = <String>{};
+        for (final t in texts) {
+          _myCollect(t, fav.outbounds, fav.endpoints, seen, tags, where: (o) => MyMarks.fav.contains(myServerKey(o)));
+        }
+      }
+      await _myUpsert(myFavName, profiles.where((p) => _myIsNamed(p, myFavName)).toList(), fav.outbounds, fav.endpoints);
     } catch (e, st) {
-      loggy.warning('MyVPN: общий профиль не собран', e, st);
+      loggy.warning('MyVPN: общие профили не собраны', e, st);
     } finally {
       _myAllBusy = false;
       if (_myAllAgain) {
@@ -496,8 +542,9 @@ MY_ALL = r"""
     List<Map<String, dynamic>> outbounds,
     List<Map<String, dynamic>> endpoints,
     Set<String> seen,
-    Set<String> tags,
-  ) {
+    Set<String> tags, {
+    bool Function(Map<String, dynamic> server)? where,
+  }) {
     Object? json;
     try {
       json = jsonDecode(text);
@@ -511,6 +558,7 @@ MY_ALL = r"""
       for (final item in list) {
         if (item is! Map<String, dynamic>) continue;
         if (_mySkipTypes.contains(item['type'])) continue;
+        if (where != null && !where(item)) continue;
         final copy = Map<String, dynamic>.of(item);
         final tag = (copy.remove('tag') ?? '').toString();
         // один и тот же сервер — только один раз
@@ -579,7 +627,18 @@ MY_ALL = r"""
 """
 def all_profile(s):
     for a, b in [
-        ("import 'package:dio/dio.dart';\n", "import 'dart:async';\nimport 'dart:convert';\n\nimport 'package:dio/dio.dart';\n"),
+        ("import 'package:dio/dio.dart';\n", "import 'dart:async';\nimport 'dart:convert';\nimport 'dart:io';\n\nimport 'package:dio/dio.dart';\n"),
+        ("import 'package:hiddify/features/profile/data/profile_parser.dart';\n",
+         "import 'package:hiddify/features/profile/data/myvpn_marks.dart';\nimport 'package:hiddify/features/profile/data/profile_parser.dart';\n"),
+        ("                  (_) => _singbox.validateConfigByPath(path, tempPath, debug).mapLeft(ProfileFailure.invalidConfig),\n",
+         "                  (_) => _singbox.validateConfigByPath(path, tempPath, debug).mapLeft(ProfileFailure.invalidConfig),\n"
+         "                )\n"
+         "                // MyVPN: исключённые серверы остаются исключёнными после обновления подписки\n"
+         "                .flatMap(\n"
+         "                  (_) => TaskEither.tryCatch(() async {\n"
+         "                    await myApplyHiddenToFile(path);\n"
+         "                    return unit;\n"
+         "                  }, ProfileFailure.unexpected),\n"),
         ("      }\n\n      return right(unit);\n    }, ProfileUnexpectedFailure.new);\n  }\n",
          "      }\n      _myWatchAll(); // MyVPN\n\n      return right(unit);\n    }, ProfileUnexpectedFailure.new);\n  }\n" + MY_ALL),
     ]:
@@ -589,7 +648,8 @@ def all_profile(s):
 def mine_iface(s):
     a = "  TaskEither<ProfileFailure, String> addLocal(String content, {UserOverride? userOverride});\n"
     assert s.count(a) == 1, "addLocal interface"
-    return s.replace(a, a + "  /// MyVPN: добавить серверы в профиль «Мои серверы»\n  TaskEither<ProfileFailure, Unit> myAddToMine(String content);\n")
+    return s.replace(a, a + "  /// MyVPN: добавить серверы в профиль «Мои серверы»\n  TaskEither<ProfileFailure, Unit> myAddToMine(String content);\n"
+                     "  /// MyVPN: применить отметки «избранное» и «исключить»\n  Future<void> myMarksChanged();\n")
 edit("lib/features/profile/data/profile_repository.dart", lambda s: mine_iface(all_profile(s)))
 
 # 20. Профили: справа число серверов и время обновления, пункт меню «Серверы» (без подключения)

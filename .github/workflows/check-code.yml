@@ -27,7 +27,7 @@ jobs:
         run: make get gen translate
 
       - name: Analyze (только ошибки)
-        run: flutter analyze --no-fatal-warnings --no-fatal-infos lib test/myvpn_link_parser_test.dart && echo "✅ ошибок в коде нет"
+        run: flutter analyze --no-fatal-warnings --no-fatal-infos lib test/myvpn_link_parser_test.dart test/myvpn_share_links_test.dart && echo "✅ ошибок в коде нет"
 
       - name: Tests MyVPN
-        run: flutter test test/myvpn_link_parser_test.dart && echo "✅ тесты пройдены"
+        run: flutter test test/myvpn_link_parser_test.dart test/myvpn_share_links_test.dart && echo "✅ тесты пройдены"

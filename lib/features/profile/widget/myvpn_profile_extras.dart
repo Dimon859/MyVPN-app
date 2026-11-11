@@ -2,13 +2,16 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
+import 'package:hiddify/features/common/qr_code_dialog.dart';
 import 'package:hiddify/features/profile/data/profile_data_providers.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
+import 'package:hiddify/features/profile/widget/myvpn_share_links.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// Один сервер профиля: имя и короткое описание (протокол, транспорт).
-typedef MyServer = ({String name, String info});
+typedef MyServer = ({String name, String info, Map<String, dynamic> json});
 
 const _mySkipTypes = {'selector', 'urltest', 'direct', 'block', 'dns'};
 
@@ -27,7 +30,7 @@ Future<List<MyServer>> myProfileServers(WidgetRef ref, String id) async {
         if (item is! Map<String, dynamic>) continue;
         final type = (item['type'] ?? '').toString();
         if (_mySkipTypes.contains(type)) continue;
-        result.add((name: (item['tag'] ?? type).toString(), info: _myInfo(item)));
+        result.add((name: (item['tag'] ?? type).toString(), info: _myInfo(item), json: item));
       }
     }
     return result;
@@ -122,6 +125,7 @@ Future<void> showMyServers(BuildContext context, WidgetRef ref, ProfileEntity pr
     useRootNavigator: true,
     builder: (context) {
       final theme = Theme.of(context);
+      final links = [for (final s in servers) ?myOutboundToLink(s.json)];
       return AlertDialog(
         title: Text('${profile.name}\n${myServersWord(servers.length)} · ${myUpdatedText(profile.lastUpdate)}'),
         titleTextStyle: theme.textTheme.titleMedium,
@@ -137,10 +141,65 @@ Future<void> showMyServers(BuildContext context, WidgetRef ref, ProfileEntity pr
                     dense: true,
                     title: Text(servers[i].name, maxLines: 1, overflow: TextOverflow.ellipsis),
                     subtitle: Text(servers[i].info),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: () => showMyServer(context, servers[i]),
                   ),
                 ),
         ),
-        actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Закрыть'))],
+        actions: [
+          if (links.isNotEmpty)
+            TextButton(
+              onPressed: () => _myCopy(context, links.join('\n'), 'Скопировано ссылок: ${links.length}'),
+              child: const Text('Копировать все'),
+            ),
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Закрыть')),
+        ],
+      );
+    },
+  );
+}
+
+void _myCopy(BuildContext context, String text, String message) {
+  Clipboard.setData(ClipboardData(text: text));
+  ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+    SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
+  );
+}
+
+/// Один сервер: JSON, ссылка, QR-код.
+Future<void> showMyServer(BuildContext context, MyServer server) async {
+  final link = myOutboundToLink(server.json);
+  final json = myPrettyJson(server.json);
+  await showDialog<void>(
+    context: context,
+    useRootNavigator: true,
+    builder: (context) {
+      final theme = Theme.of(context);
+      return AlertDialog(
+        title: Text(server.name, maxLines: 2, overflow: TextOverflow.ellipsis),
+        titleTextStyle: theme.textTheme.titleMedium,
+        content: SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            child: SelectableText(json, style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+          ),
+        ),
+        actionsOverflowButtonSpacing: 4,
+        actions: [
+          if (link != null) ...[
+            TextButton(
+              onPressed: () => showDialog<void>(
+                context: context,
+                useRootNavigator: true,
+                builder: (_) => QrCodeDialog(link, title: server.name, link: link),
+              ),
+              child: const Text('QR-код'),
+            ),
+            TextButton(onPressed: () => _myCopy(context, link, 'Ссылка скопирована'), child: const Text('Ссылка')),
+          ],
+          TextButton(onPressed: () => _myCopy(context, json, 'JSON скопирован'), child: const Text('JSON')),
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Закрыть')),
+        ],
       );
     },
   );

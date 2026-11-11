@@ -395,6 +395,140 @@ def unwrap(s):
     return s.replace(a, "task = _profilesRepo.addLocal(safeDecodeBase64(LinkParser.myUnwrapConfig(rawInput.trim()))).map((_) => unit);")
 edit("lib/features/profile/notifier/profile_notifier.dart", unwrap)
 
+# 19. Общий профиль «Все подписки»: серверы всех подписок в одном профиле,
+#     сам пересобирается при добавлении, обновлении и удалении подписок
+MY_ALL = r"""
+  // ===== MyVPN: общий профиль «Все подписки» =====
+  static const myAllName = 'Все подписки';
+  static const _mySkipTypes = {'selector', 'urltest', 'direct', 'block', 'dns'};
+  StreamSubscription<dynamic>? _myAllSub;
+  Timer? _myAllTimer;
+  String? _myAllSig;
+  bool _myAllBusy = false;
+  bool _myAllAgain = false;
+
+  bool _myIsAll(ProfileEntity p) =>
+      p is LocalProfileEntity && (p.userOverride?.name == myAllName || p.name == myAllName);
+
+  void _myWatchAll() {
+    if (kIsWeb || _myAllSub != null) return;
+    _myAllSub = _profileDataSource
+        .watchAll(sort: ProfilesSort.lastUpdate, sortMode: SortMode.ascending)
+        .listen(
+          (entries) {
+            final others = [for (final e in entries) ?_readable(e)].where((p) => !_myIsAll(p)).toList()
+              ..sort((a, b) => a.id.compareTo(b.id));
+            final sig = [for (final p in others) '${p.id}@${p.lastUpdate.millisecondsSinceEpoch}'].join('|');
+            if (sig == _myAllSig) return;
+            _myAllSig = sig;
+            _myAllTimer?.cancel();
+            _myAllTimer = Timer(const Duration(seconds: 3), () => unawaited(_myRebuildAll()));
+          },
+          onError: (Object e, StackTrace st) => loggy.warning('MyVPN: слежение за профилями', e, st),
+        );
+  }
+
+  Future<void> _myRebuildAll() async {
+    if (_myAllBusy) {
+      _myAllAgain = true;
+      return;
+    }
+    _myAllBusy = true;
+    try {
+      final entries = await _profileDataSource
+          .watchAll(sort: ProfilesSort.lastUpdate, sortMode: SortMode.ascending)
+          .first;
+      final profiles = [for (final e in entries) ?_readable(e)];
+      final existing = profiles.where(_myIsAll).toList();
+      final others = profiles.where((p) => !_myIsAll(p)).toList();
+      // общий профиль нужен, только когда подписок хотя бы две
+      if (others.length < 2) {
+        for (final p in existing) {
+          await deleteById(p.id, p.active).run();
+        }
+        return;
+      }
+      final outbounds = <Map<String, dynamic>>[];
+      final endpoints = <Map<String, dynamic>>[];
+      final seen = <String>{};
+      final tags = <String>{};
+      for (final p in others) {
+        final file = _profilePathResolver.file(p.id);
+        if (!await file.exists()) continue;
+        Object? json;
+        try {
+          json = jsonDecode(await file.readAsString());
+        } catch (_) {
+          continue;
+        }
+        if (json is! Map<String, dynamic>) continue;
+        for (final key in const ['outbounds', 'endpoints']) {
+          final list = json[key];
+          if (list is! List) continue;
+          for (final item in list) {
+            if (item is! Map<String, dynamic>) continue;
+            if (_mySkipTypes.contains(item['type'])) continue;
+            final copy = Map<String, dynamic>.of(item);
+            final tag = (copy.remove('tag') ?? '').toString();
+            // один и тот же сервер из разных подписок — только один раз
+            if (!seen.add('$key ${jsonEncode(copy)}')) continue;
+            final base = tag.isEmpty ? 'proxy' : tag;
+            var t = base;
+            for (var n = 2; !tags.add(t); n++) {
+              t = '$base ($n)';
+            }
+            copy['tag'] = t;
+            (key == 'outbounds' ? outbounds : endpoints).add(copy);
+          }
+        }
+      }
+      if (outbounds.isEmpty && endpoints.isEmpty) return;
+      final content = jsonEncode({'outbounds': outbounds, if (endpoints.isNotEmpty) 'endpoints': endpoints});
+      const override = UserOverride(name: myAllName);
+      if (existing.isEmpty) {
+        final res = await addLocal(content, userOverride: override).run();
+        await res.match(
+          (l) async => loggy.warning('MyVPN: общий профиль не создан: $l'),
+          (id) async {
+            await setPinned(id, true).run();
+            loggy.info('MyVPN: общий профиль создан, серверов: ${outbounds.length + endpoints.length}');
+          },
+        );
+      } else {
+        final cur = existing.first;
+        final res = await offlineUpdate(cur.copyWith(userOverride: cur.userOverride ?? override), content).run();
+        res.match(
+          (l) => loggy.warning('MyVPN: общий профиль не обновлён: $l'),
+          (_) => loggy.info('MyVPN: общий профиль обновлён, серверов: ${outbounds.length + endpoints.length}'),
+        );
+        for (final extra in existing.skip(1)) {
+          await deleteById(extra.id, extra.active).run();
+        }
+      }
+    } catch (e, st) {
+      loggy.warning('MyVPN: общий профиль не собран', e, st);
+    } finally {
+      _myAllBusy = false;
+      if (_myAllAgain) {
+        _myAllAgain = false;
+        unawaited(_myRebuildAll());
+      }
+    }
+  }
+  // ===== конец MyVPN =====
+
+"""
+def all_profile(s):
+    for a, b in [
+        ("import 'package:dio/dio.dart';\n", "import 'dart:async';\nimport 'dart:convert';\n\nimport 'package:dio/dio.dart';\n"),
+        ("      }\n\n      return right(unit);\n    }, ProfileUnexpectedFailure.new);\n  }\n",
+         "      }\n      _myWatchAll(); // MyVPN\n\n      return right(unit);\n    }, ProfileUnexpectedFailure.new);\n  }\n" + MY_ALL),
+    ]:
+        assert s.count(a) == 1, a.strip()[:50]
+        s = s.replace(a, b)
+    return s
+edit("lib/features/profile/data/profile_repository.dart", all_profile)
+
 # 8. Экран запуска: туннель на тёмном фоне
 import zlib, struct
 def png(path, w, h, px):

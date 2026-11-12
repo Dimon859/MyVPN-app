@@ -1027,6 +1027,16 @@ def swift_timer(s):
     return s
 edit("ios/HiddifyPacketTunnel/PacketTunnelProvider.swift", swift_timer)
 
+# 32. Скрыть значок VPN: расширение включает excludeDefaultRoute, если приложение оставило файл myvpn_hide_icon
+def hide_icon(s):
+    a = '            excludeAPNsRoute: flag("excludeAPNsRoute", defaults.excludeAPNsRoute)\n        )\n'
+    assert s.count(a) == 1, "applyStartOptions"
+    return s.replace(a, a + '        // MyVPN: «Скрыть значок VPN» — iOS не рисует значок, если исключён маршрут 0.0.0.0/31 и ::/127\n'
+        '        if FileManager.default.fileExists(atPath: FilePath.sharedDirectory.appendingPathComponent("myvpn_hide_icon").path) {\n'
+        '            overridePreferences?.excludeDefaultRoute = true\n'
+        '        }\n')
+edit("ios/HiddifyPacketTunnel/SingBox/ExtensionProvider.swift", hide_icon)
+
 # 8. Экран запуска: туннель на тёмном фоне
 import zlib, struct
 def png(path, w, h, px):

@@ -215,6 +215,24 @@ abstract final class MyTimer {
     await f.writeAsString('${DateTime.now().add(d).millisecondsSinceEpoch / 1000}');
   }
 
+  /// Скрыть значок VPN в строке состояния (файл читает расширение VPN при подключении).
+  static bool hideIcon(WidgetRef ref) {
+    try {
+      return _file(ref, 'myvpn_hide_icon').existsSync();
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<void> setHideIcon(WidgetRef ref, bool on) async {
+    final f = _file(ref, 'myvpn_hide_icon');
+    if (on) {
+      await f.writeAsString('1');
+    } else if (await f.exists()) {
+      await f.delete();
+    }
+  }
+
   static String? dailyOff(WidgetRef ref) {
     try {
       final f = _file(ref, 'myvpn_daily_off');
@@ -565,6 +583,20 @@ class MyToolsTiles extends HookConsumerWidget {
           onTap: () async {
             await showMyDailyOff(context, ref);
             tick.value++;
+          },
+        ),
+        SwitchListTile(
+          secondary: const Icon(Icons.visibility_off_outlined),
+          title: const Text('Скрыть значок VPN'),
+          subtitle: const Text(
+            'VPN работает как обычно, но значка «VPN» вверху экрана нет. '
+            'Приложения всё равно могут узнать, что VPN включён. Применится после переподключения.',
+          ),
+          value: MyTimer.hideIcon(ref),
+          onChanged: (on) async {
+            await MyTimer.setHideIcon(ref, on);
+            tick.value++;
+            if (context.mounted) mySnack(context, 'Переподключитесь, чтобы применить');
           },
         ),
         ListTile(

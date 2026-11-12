@@ -11,6 +11,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
+import 'package:hiddify/features/connections/myvpn_connections.dart';
 import 'package:hiddify/features/profile/data/myvpn_marks.dart';
 import 'package:hiddify/features/profile/data/profile_data_providers.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
@@ -345,6 +346,18 @@ class MyHomePanel extends HookConsumerWidget {
         ),
       ),
     );
+
+    // режимы и соединения
+    children.add(const MyRouteModeSwitch());
+    if (running) {
+      children.add(
+        TextButton.icon(
+          icon: const Icon(Icons.lan_outlined, size: 18),
+          label: const Text('Соединения'),
+          onPressed: () => showMyConnections(context),
+        ),
+      );
+    }
 
     return Padding(
       padding: const EdgeInsets.only(top: 8),

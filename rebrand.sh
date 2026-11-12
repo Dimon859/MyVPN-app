@@ -1037,6 +1037,27 @@ def hide_icon(s):
         '        }\n')
 edit("ios/HiddifyPacketTunnel/SingBox/ExtensionProvider.swift", hide_icon)
 
+# 33. Соединения и режимы: пароль Clash API передаётся в ядро, правила зависят от режима
+def web_secret_field(s):
+    a = "    required int clashApiPort,\n"
+    assert s.count(a) == 1, "clashApiPort field"
+    return s.replace(a, a + "    @Default('') String webSecret, // MyVPN: пароль Clash API (вкладка «Соединения»)\n")
+edit("lib/singbox/model/singbox_config_option.dart", web_secret_field)
+def modes(s):
+    for a, b in [
+        ("      clashApiPort: ref.watch(clashApiPort),\n",
+         "      clashApiPort: ref.watch(clashApiPort),\n      webSecret: ref.watch(myWebSecretProvider), // MyVPN\n"),
+        ("      routeRule: RouteRule(rules: ref.watch(rulesNotifierProvider)).toProto3Json()! as Map<String, dynamic>,\n",
+         "      routeRule: RouteRule(rules: myRulesForMode(ref.watch(rulesNotifierProvider), ref.watch(myRouteModeProvider)))\n"
+         "          .toProto3Json()! as Map<String, dynamic>, // MyVPN: режимы\n"),
+        ("import 'package:hiddify/features/log/model/log_level.dart';\n",
+         "import 'package:hiddify/features/connections/myvpn_connections.dart';\nimport 'package:hiddify/features/log/model/log_level.dart';\n"),
+    ]:
+        assert s.count(a) == 1, a.strip()[:50]
+        s = s.replace(a, b)
+    return s
+edit("lib/features/settings/data/config_option_repository.dart", modes)
+
 # 8. Экран запуска: туннель на тёмном фоне
 import zlib, struct
 def png(path, w, h, px):

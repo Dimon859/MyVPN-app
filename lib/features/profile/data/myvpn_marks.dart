@@ -19,8 +19,8 @@ const _myQuicTypes = {'hysteria2', 'hysteria', 'tuic', 'wireguard'};
 
 /// Отпечатки TLS (uTLS), которые понимает ядро.
 const myFingerprints = {
-  '': 'Как в подписке',
-  'chrome': 'Chrome',
+  '': 'Как в подписке (лучший вариант)',
+  'chrome': 'Chrome — в России часто блокируется',
   'safari': 'Safari',
   'ios': 'iOS',
   'firefox': 'Firefox',

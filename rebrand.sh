@@ -412,7 +412,8 @@ MY_ALL = r"""
   bool _myIsNamed(ProfileEntity p, String name) =>
       p is LocalProfileEntity && (p.userOverride?.name == name || p.name == name);
   bool _myIsAll(ProfileEntity p) => _myIsNamed(p, myAllName);
-  bool _myIsSpecial(ProfileEntity p) => _myIsNamed(p, myAllName) || _myIsNamed(p, myFavName);
+  bool _myIsSpecial(ProfileEntity p) =>
+      _myIsNamed(p, myAllName) || _myIsNamed(p, myFavName) || _myIsNamed(p, '☁️ WARP'); // запасной WARP — не в общие
 
   void _myWatchAll() {
     if (kIsWeb || _myAllSub != null) return;
@@ -613,6 +614,7 @@ MY_ALL = r"""
           }
         }
         final before = outbounds.length + endpoints.length;
+        final beforeOut = outbounds.length, beforeEnd = endpoints.length;
         final newOrig = File(myOrigPath(outFile.path));
         _myCollect(await (await newOrig.exists() ? newOrig : outFile).readAsString(), outbounds, endpoints, seen, tags);
         if (outbounds.isEmpty && endpoints.isEmpty) throw const ProfileFailure.invalidConfig();
@@ -626,6 +628,7 @@ MY_ALL = r"""
           await setAsActive(mine.id).run();
         }
         loggy.info('MyVPN: в «Мои серверы» добавлено: ${outbounds.length + endpoints.length - before}');
+        myOnServersAdded?.call([...outbounds.skip(beforeOut), ...endpoints.skip(beforeEnd)]);
         return unit;
       } finally {
         if (inFile.existsSync()) inFile.deleteSync();
@@ -676,7 +679,9 @@ def tile(s):
     for a, b in [
         ("import 'package:hiddify/features/profile/model/profile_entity.dart';\n",
          "import 'package:hiddify/features/profile/model/profile_entity.dart';\n"
-         "import 'package:hiddify/features/profile/widget/myvpn_profile_extras.dart';\n"),
+         "import 'package:hiddify/features/profile/widget/myvpn_profile_extras.dart';\n"
+         "import 'package:hiddify/features/settings/myvpn_update_check.dart';\n"
+         "import 'package:hiddify/features/stats/myvpn_counters.dart';\n"),
         ("    final nameText = Text(\n      profile.name,\n",
          "    final nameText = MyNameRow(\n      profile: profile,\n      text: Text(\n      profile.name,\n"),
         ("\n    );\n\n    final Widget? trailing = isMain",
@@ -684,6 +689,12 @@ def tile(s):
         ("      if (profile case RemoteProfileEntity())\n        AdaptiveMenuItem(\n          title: t.common.update,",
          "      AdaptiveMenuItem(\n        title: 'Серверы',\n        leadingIcon: const Icon(Icons.dns_rounded),\n"
          "        onTap: () => showMyServers(context, ref, profile),\n      ),\n"
+         "      AdaptiveMenuItem(\n        title: 'Трафик и лимит',\n        leadingIcon: const Icon(Icons.data_usage_rounded),\n"
+         "        onTap: () => showMyCounter(context, profile.name),\n      ),\n"
+         "      if (profile case RemoteProfileEntity())\n        AdaptiveMenuItem(\n          title: 'Откатить последнее обновление',\n"
+         "          leadingIcon: const Icon(Icons.history_rounded),\n"
+         "          onTap: () async {\n            final ok = await myRollback(ref, profile);\n"
+         "            if (context.mounted) mySnack(context, ok ? 'Вернул прошлую версию подписки' : 'Прошлой версии нет');\n          },\n        ),\n"
          "      if (profile case RemoteProfileEntity())\n        AdaptiveMenuItem(\n          title: t.common.update,"),
     ]:
         assert s.count(a) == 1, a.strip()[:50]
@@ -876,6 +887,20 @@ def apple_rules(s):
     s = s.replace(a, a + "".join(f"    {k} => Rule(outbound: Outbound.proxy, {v[1]}),\n" for k, v in APPLE_RULES.items()))
     return s
 edit("lib/features/route_rules/notifier/rules_notifier.dart", apple_rules)
+def malware_rule(s):
+    for a, b in [
+        ("  blockAds(enabledByDefault: false),\n", "  blockMalware(enabledByDefault: false),\n  blockAds(enabledByDefault: false),\n"),
+        ("    blockAds => t.pages.settings.routing.builtinRules.blockAds,\n",
+         "    blockMalware => 'Блокировать вирусные и фишинговые сайты',\n    blockAds => t.pages.settings.routing.builtinRules.blockAds,\n"),
+        ("    blockAds => Rule(\n",
+         "    blockMalware => Rule(\n      outbound: Outbound.block,\n      ruleSets: [\n"
+         "        '$_geoUrl/block/geosite-malware.srs',\n        '$_geoUrl/block/geosite-phishing.srs',\n"
+         "        '$_geoUrl/block/geosite-cryptominers.srs',\n      ],\n    ),\n    blockAds => Rule(\n"),
+    ]:
+        assert s.count(a) == 1, a.strip()[:40]
+        s = s.replace(a, b)
+    return s
+edit("lib/features/route_rules/notifier/rules_notifier.dart", malware_rule)
 
 # 26. Главный экран: панель под кнопкой (время сессии, график, сервер, белые списки, скорость)
 for f in ["lib/features/home/widget/myvpn_home_panel.dart", "lib/features/settings/myvpn_tools.dart", "lib/utils/myvpn_telegram.dart"]:
@@ -894,10 +919,11 @@ edit("lib/features/home/widget/home_page.dart", home_panel)
 def session_feed(s):
     for a, b in [
         ("import 'package:hiddify/features/stats/myvpn_traffic.dart';\n",
-         "import 'package:hiddify/features/home/widget/myvpn_home_panel.dart';\nimport 'package:hiddify/features/stats/myvpn_traffic.dart';\n"),
+         "import 'package:hiddify/features/home/widget/myvpn_home_panel.dart';\nimport 'package:hiddify/features/stats/myvpn_counters.dart';\nimport 'package:hiddify/features/stats/myvpn_traffic.dart';\n"),
         ("            MyTraffic.feed(info.uplinkTotal.toInt(), info.downlinkTotal.toInt(), info.currentProfile); // MyVPN\n",
          "            MyTraffic.feed(info.uplinkTotal.toInt(), info.downlinkTotal.toInt(), info.currentProfile); // MyVPN\n"
-         "            MySession.feedStats(info.uplink.toInt(), info.downlink.toInt()); // MyVPN\n"),
+         "            MySession.feedStats(info.uplink.toInt(), info.downlink.toInt()); // MyVPN\n"
+         "            MyCounters.feed(info.uplinkTotal.toInt(), info.downlinkTotal.toInt(), info.currentProfile, info.currentOutbound); // MyVPN\n"),
     ]:
         assert s.count(a) == 1, a.strip()[:50]
         s = s.replace(a, b)

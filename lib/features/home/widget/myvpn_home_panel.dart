@@ -19,7 +19,11 @@ import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
 import 'package:hiddify/features/profile/widget/myvpn_profile_extras.dart';
 import 'package:hiddify/features/proxy/active/active_proxy_notifier.dart';
 import 'package:hiddify/features/proxy/data/proxy_data_providers.dart';
+import 'package:hiddify/features/settings/myvpn_detectors.dart';
+import 'package:hiddify/features/settings/myvpn_events.dart';
+import 'package:hiddify/features/settings/myvpn_guard.dart';
 import 'package:hiddify/features/settings/myvpn_tools.dart';
+import 'package:hiddify/features/settings/myvpn_update_check.dart';
 import 'package:hiddify/features/stats/notifier/stats_notifier.dart';
 import 'package:hiddify/hiddifycore/generated/v2/hcore/hcore.pb.dart' hide IpInfo;
 import 'package:hiddify/utils/number_formatters.dart';
@@ -152,6 +156,7 @@ class MyHomePanel extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    MyUpdateAlert.init();
     final theme = Theme.of(context);
     final running = ref.watch(serviceRunningProvider);
     final stats = running ? ref.watch(statsNotifierProvider).valueOrNull : null;
@@ -238,7 +243,57 @@ class MyHomePanel extends HookConsumerWidget {
     }, [pendingUrl]);
 
     final currentTag = list == null ? null : myCurrentServerTag(list);
+    final prevTag = MySession.lastTag;
     MySession.onServer(currentTag);
+    if (currentTag != null && prevTag != null && prevTag != currentTag) {
+      myEvent('Сервер: ${myCleanName(currentTag)}');
+    }
+
+    // сервер тормозит: пинг сильно выше обычного для этого сервера
+    final currentDelay = list?.items.firstOrNull?.items.where((o) => o.tag == currentTag).firstOrNull?.urlTestDelay ?? 0;
+    final slowInfo = useMemoized(() {
+      if (currentTag == null) return null;
+      final typical = MySlow.observe(currentTag, currentDelay);
+      return MySlow.isSlow(currentDelay, typical) ? typical : null;
+    }, [currentTag, currentDelay]);
+    final slowTypical = slowInfo;
+
+    // сторож: проверки серверов, цепочка запасных, протоколы по сетям (раз в 30 секунд)
+    final listRef = useRef(list);
+    listRef.value = list;
+    useEffect(() {
+      unawaited(MySlow.load());
+      Future<void> run() async {
+        if (context.mounted) await MyGuard.tick(context, ref, listRef.value);
+      }
+
+      final first = Timer(const Duration(seconds: 8), () => unawaited(run()));
+      final timer = Timer.periodic(const Duration(seconds: 30), (_) => unawaited(run()));
+      return () {
+        first.cancel();
+        timer.cancel();
+      };
+    }, const []);
+
+    // подозрительное обновление подписки и проверка добавленного сервера
+    final alert = useValueListenable(MyUpdateAlert.notifier);
+    useEffect(() {
+      if (alert == null) return null;
+      MyUpdateAlert.notifier.value = null;
+      unawaited(Future<void>.delayed(const Duration(milliseconds: 800), () {
+        if (context.mounted) unawaited(showMyUpdateAlert(context, ref, alert));
+      }));
+      return null;
+    }, [alert]);
+    final added = useValueListenable(MyAddCheck.notifier);
+    useEffect(() {
+      if (added == null) return null;
+      MyAddCheck.notifier.value = null;
+      unawaited(Future<void>.delayed(const Duration(milliseconds: 800), () {
+        if (context.mounted) unawaited(showMyAddCheck(context, ref, added));
+      }));
+      return null;
+    }, [added]);
 
     // запоминаем рабочий сервер для этой сети: держится минуту и через него реально идёт трафик
     final traffic = MySession.down.fold<int>(0, (a, b) => a + b);
@@ -254,6 +309,12 @@ class MyHomePanel extends HookConsumerWidget {
     }, [stable, currentTag, net.value]);
 
     final muted = theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant);
+    final compactBtn = TextButton.styleFrom(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      minimumSize: const Size(0, 28),
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: VisualDensity.compact,
+    );
     final children = <Widget>[];
 
     if (running) {
@@ -263,44 +324,70 @@ class MyHomePanel extends HookConsumerWidget {
         Text(
           [
             if (start != null) '⏱ ${_myDuration(DateTime.now().difference(start))}',
-            'смен сервера: ${MySession.switches}',
-            if (stopAt != null) '⏲ выкл. в ${myHm(stopAt)}',
+            'смен: ${MySession.switches}',
+            if (stats != null) '↓ ${stats.downlink.toInt().speed()} ↑ ${stats.uplink.toInt().speed()}',
+            if (stopAt != null) '⏲ ${myHm(stopAt)}',
           ].join(' · '),
           style: muted,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
       );
-      children.add(const SizedBox(height: 6));
       children.add(
-        SizedBox(
-          height: 34,
-          width: 220,
-          child: CustomPaint(
-            painter: _MySpeedPainter(
-              down: List.of(MySession.down),
-              up: List.of(MySession.up),
-              downColor: const Color(0xFF22D3EE),
-              upColor: const Color(0xFF34D399),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 3),
+          child: SizedBox(
+            height: 22,
+            width: 220,
+            child: CustomPaint(
+              painter: _MySpeedPainter(
+                down: List.of(MySession.down),
+                up: List.of(MySession.up),
+                downColor: const Color(0xFF22D3EE),
+                upColor: const Color(0xFF34D399),
+              ),
             ),
           ),
         ),
       );
-      if (stats != null) {
-        children.add(Text('↓ ${stats.downlink.toInt().speed()}   ↑ ${stats.uplink.toInt().speed()}', style: muted));
-      }
       if (ipInfo != null) {
         final host = [
           if ((ipInfo.city ?? '').isNotEmpty) ipInfo.city!,
           if ((fullOrg ?? ipInfo.org ?? '').isNotEmpty) fullOrg ?? ipInfo.org!,
           if (asn.isNotEmpty) asn,
         ].join(' · ');
-        if (host.isNotEmpty) children.add(Text('📍 $host', style: muted, textAlign: TextAlign.center));
+        if (host.isNotEmpty) {
+          children.add(Text('📍 $host', style: muted, textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis));
+        }
+      }
+      // сервер тормозит
+      if (slowTypical != null) {
+        children.add(
+          TextButton.icon(
+            style: compactBtn,
+            icon: const Icon(Icons.speed_rounded, size: 16, color: Color(0xFFF59E0B)),
+            label: Text(
+              '🐢 Тормозит: пинг $currentDelay мс вместо обычных $slowTypical — сменить',
+              style: const TextStyle(color: Color(0xFFF59E0B)),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            onPressed: () async {
+              myEvent('🐢 Сервер тормозил (пинг $currentDelay вместо $slowTypical) — переключение на автовыбор');
+              await ref.read(proxyRepositoryProvider).urlTest('select').run();
+              await ref.read(proxyRepositoryProvider).selectProxy('select', 'lowest').run();
+              if (context.mounted) mySnack(context, 'Переключаю на лучший по пингу');
+            },
+          ),
+        );
       }
       // последний рабочий сервер для этой сети
       final last = MyLastServer.byNet[net.value];
       if (last != null && activeProfile != null && last['profile'] == activeProfile.id && last['tag'] != currentTag) {
         children.add(
           TextButton.icon(
-            icon: Icon(net.value == 'cell' ? Icons.signal_cellular_alt_rounded : Icons.wifi_rounded, size: 18),
+            style: compactBtn,
+            icon: Icon(net.value == 'cell' ? Icons.signal_cellular_alt_rounded : Icons.wifi_rounded, size: 16),
             label: Text(
               '${switch (net.value) {
                 'cell' => 'На LTE',
@@ -321,10 +408,11 @@ class MyHomePanel extends HookConsumerWidget {
       children.add(_MyWhitelistBanner(netName: myNetName(net.value)));
     }
 
-    // скорость с VPN и без
+    // скорость с VPN и без — одной строкой; нажатие — замер, долгое нажатие — когда мерили
     children.add(
-      TextButton(
-        onPressed: speedBusy.value
+      InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: speedBusy.value
             ? null
             : () async {
                 speedBusy.value = true;
@@ -332,35 +420,51 @@ class MyHomePanel extends HookConsumerWidget {
                 speedBusy.value = false;
                 speedTick.value++;
                 if (context.mounted) {
-                  mySnack(context, r == null ? 'Не удалось замерить скорость: серверы для замера не ответили' : '${running ? 'Через VPN' : 'Без VPN'}: ${myMbps(r)}');
+                  mySnack(
+                    context,
+                    r == null
+                        ? 'Не удалось замерить скорость: серверы для замера не ответили'
+                        : '${running ? 'Через VPN' : 'Без VPN'}: ${myMbps(r)}',
+                  );
                 }
               },
-        child: Text(
-          speedBusy.value
-              ? 'Замеряю скорость…'
-              : 'Скорость (нажми, чтобы замерить ${running ? 'через VPN' : 'без VPN'}):\n'
-                    'без VPN ${directSpeed == null ? '—' : '${myMbps(directSpeed.mbps)}, ${_myAgo(directSpeed.at)}'}\n'
-                    'через VPN ${vpnSpeed == null ? '—' : '${myMbps(vpnSpeed.mbps)}, ${_myAgo(vpnSpeed.at)}'}',
-          style: muted,
-          textAlign: TextAlign.center,
+        onLongPress: () => mySnack(
+          context,
+          'Без VPN: ${directSpeed == null ? 'не мерили' : '${myMbps(directSpeed.mbps)}, ${_myAgo(directSpeed.at)}'}\n'
+          'Через VPN: ${vpnSpeed == null ? 'не мерили' : '${myMbps(vpnSpeed.mbps)}, ${_myAgo(vpnSpeed.at)}'}',
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          child: Text(
+            speedBusy.value
+                ? '⚡ Замеряю скорость ${running ? 'через VPN' : 'без VPN'}…'
+                : '⚡ без VPN ${directSpeed == null ? '—' : directSpeed.mbps.round()} · '
+                      'через VPN ${vpnSpeed == null ? '—' : vpnSpeed.mbps.round()} Мбит/с',
+            style: muted?.copyWith(color: theme.colorScheme.primary),
+          ),
         ),
       ),
     );
 
-    // режимы и соединения
-    children.add(const MyRouteModeSwitch());
-    if (running) {
-      children.add(
-        TextButton.icon(
-          icon: const Icon(Icons.lan_outlined, size: 18),
-          label: const Text('Соединения'),
-          onPressed: () => showMyConnections(context),
-        ),
-      );
-    }
+    // режимы и соединения в одну строку
+    children.add(
+      Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const MyRouteModeSwitch(),
+          if (running)
+            IconButton(
+              tooltip: 'Соединения',
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.lan_outlined, size: 20),
+              onPressed: () => showMyConnections(context),
+            ),
+        ],
+      ),
+    );
 
     return Padding(
-      padding: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.only(top: 4),
       child: Column(mainAxisSize: MainAxisSize.min, children: children),
     );
   }
@@ -618,6 +722,7 @@ abstract final class MyWlAuto {
       final main = profiles.where((p) => p.id == mainId).firstOrNull;
 
       void say(String text) {
+        myEvent(text);
         if (context.mounted) mySnack(context, text);
       }
 

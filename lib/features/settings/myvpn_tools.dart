@@ -14,6 +14,8 @@ import 'package:hiddify/features/profile/data/profile_data_providers.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/widget/myvpn_profile_extras.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
+import 'package:hiddify/features/settings/myvpn_events.dart';
+import 'package:hiddify/features/settings/myvpn_protect_tiles.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -116,6 +118,7 @@ Future<void> showMyNetworkCheck(BuildContext context, WidgetRef ref) async {
                             style: TextStyle(color: e.value == null ? theme.colorScheme.error : const Color(0xFF34D399)),
                           ),
                         ),
+                      const MyNetCheckExtra(),
                       Padding(
                         padding: const EdgeInsets.only(top: 8),
                         child: Text(
@@ -457,8 +460,16 @@ const myDnsPresets = {
   'Quad9': 'https://dns.quad9.net/dns-query',
 };
 
-class MyDnsPresetsTile extends ConsumerWidget {
+class MyDnsPresetsTile extends StatelessWidget {
   const MyDnsPresetsTile({super.key});
+
+  @override
+  Widget build(BuildContext context) =>
+      const Column(mainAxisSize: MainAxisSize.min, children: [_MyDnsPresetOnly(), MyFastDnsTiles()]);
+}
+
+class _MyDnsPresetOnly extends ConsumerWidget {
+  const _MyDnsPresetOnly();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -640,9 +651,10 @@ class MyToolsTiles extends HookConsumerWidget {
         ListTile(
           leading: const Icon(Icons.network_check_rounded),
           title: const Text('Проверка сети'),
-          subtitle: const Text('Белые списки и открытые порты'),
+          subtitle: const Text('Белые списки, порты, подмена DNS, какие протоколы живы'),
           onTap: () => showMyNetworkCheck(context, ref),
         ),
+        const MyProtectTiles(),
       ],
     );
   }

@@ -11,6 +11,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hiddify/features/common/qr_code_dialog.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/profile/data/myvpn_marks.dart';
+import 'package:hiddify/features/stats/myvpn_counters.dart';
 import 'package:hiddify/features/profile/data/profile_data_providers.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
@@ -152,10 +153,19 @@ class MyNameRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    final p = profile;
+    final hasBar = p is RemoteProfileEntity && p.subInfo != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Expanded(child: text),
-        Padding(padding: const EdgeInsetsDirectional.only(start: 8), child: MyProfileMeta(profile)),
+        Row(
+          children: [
+            Expanded(child: text),
+            Padding(padding: const EdgeInsetsDirectional.only(start: 8), child: MyProfileMeta(profile)),
+          ],
+        ),
+        MyCounterLine(name: profile.name, hasProviderBar: hasBar),
       ],
     );
   }

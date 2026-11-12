@@ -74,10 +74,15 @@ class MyRouteModeSwitch extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final mode = ref.watch(myRouteModeProvider);
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: 2),
       child: SegmentedButton<String>(
         showSelectedIcon: false,
-        style: const ButtonStyle(visualDensity: VisualDensity.compact),
+        style: const ButtonStyle(
+          visualDensity: VisualDensity(horizontal: -3, vertical: -3),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 10)),
+          textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 13)),
+        ),
         segments: [
           for (final e in myRouteModes.entries) ButtonSegment(value: e.key, label: Text(e.value)),
         ],

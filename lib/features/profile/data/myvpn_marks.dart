@@ -91,6 +91,9 @@ abstract final class MyMarks {
   static Map<String, String> sections = {}; // id профиля → раздел для автовыбора
   static bool hideInsecure = false;
   static String fingerprint = '';
+  static Map<String, String> bad = {}; // ключ сервера → что нашли детекторы (🧊, ⚠️)
+  static Map<String, Set<String>> typesByNet = {}; // сеть (wifi/cell) → разрешённые протоколы; пусто — все
+  static Set<String> allowTypes = {}; // протоколы для текущей сети (выставляется при смене сети)
   static Future<void>? _loading;
 
   static Future<void> load() => _loading ??= () async {
@@ -110,6 +113,15 @@ abstract final class MyMarks {
       }
       final sec = p.getString('myvpn_sections');
       if (sec != null) sections = (jsonDecode(sec) as Map).map((k, v) => MapEntry(k.toString(), v.toString()));
+      final b = p.getString('myvpn_bad');
+      if (b != null) bad = (jsonDecode(b) as Map).map((k, v) => MapEntry(k.toString(), v.toString()));
+      final tn = p.getString('myvpn_types_by_net');
+      if (tn != null) {
+        typesByNet = {
+          for (final e in (jsonDecode(tn) as Map).entries) e.key.toString(): {for (final f in e.value as List) f.toString()},
+        };
+      }
+      allowTypes = (p.getStringList('myvpn_allow_types') ?? const []).toSet();
     } catch (_) {}
   }();
 
@@ -127,6 +139,9 @@ abstract final class MyMarks {
         jsonEncode(profileCountries.map((k, v) => MapEntry(k, v.toList()))),
       );
       await p.setString('myvpn_sections', jsonEncode(sections));
+      await p.setString('myvpn_bad', jsonEncode(bad));
+      await p.setString('myvpn_types_by_net', jsonEncode(typesByNet.map((k, v) => MapEntry(k, v.toList()))));
+      await p.setStringList('myvpn_allow_types', allowTypes.toList());
     } catch (_) {}
   }
 
@@ -145,6 +160,8 @@ class MyTransformOptions {
     this.section,
     this.hideInsecure = false,
     this.fingerprint = '',
+    this.bad = const {},
+    this.allowTypes = const {},
   });
 
   factory MyTransformOptions.forProfile(String? profileId) => MyTransformOptions(
@@ -153,6 +170,8 @@ class MyTransformOptions {
     section: profileId == null ? null : MyMarks.sections[profileId],
     hideInsecure: MyMarks.hideInsecure,
     fingerprint: MyMarks.fingerprint,
+    bad: MyMarks.bad,
+    allowTypes: MyMarks.allowTypes,
   );
 
   final Set<String> hidden;
@@ -160,6 +179,35 @@ class MyTransformOptions {
   final String? section;
   final bool hideInsecure;
   final String fingerprint;
+  final Map<String, String> bad;
+  final Set<String> allowTypes;
+}
+
+/// Протокол сервера для людей: Reality, VLESS, Hysteria2, Trojan, Shadowsocks, VMess, TUIC, WireGuard…
+String myProtoOf(Map<String, dynamic> o) {
+  final type = (o['type'] ?? '').toString();
+  final tls = o['tls'];
+  final reality = tls is Map && tls['reality'] is Map && (tls['reality'] as Map)['enabled'] == true;
+  return switch (type) {
+    'vless' => reality ? 'Reality' : 'VLESS',
+    'hysteria2' => 'Hysteria2',
+    'hysteria' => 'Hysteria',
+    'trojan' => 'Trojan',
+    'shadowsocks' => 'Shadowsocks',
+    'vmess' => 'VMess',
+    'tuic' => 'TUIC',
+    'wireguard' => 'WireGuard',
+    'warp' => 'WARP',
+    _ => type.isEmpty ? '?' : type,
+  };
+}
+
+/// Что детекторы нашли у сервера, или null.
+String? myBadReason(Map<String, String> bad, Map<String, dynamic> o) {
+  final k = myServerKey(o);
+  if (bad.containsKey(k)) return bad[k];
+  final legacy = myLegacyKey(o);
+  return bad[legacy];
 }
 
 /// Почему сервер не в автовыборе (для списка), или null.
@@ -170,6 +218,9 @@ String? myHiddenReason(Map<String, dynamic> o, MyTransformOptions opt) {
   final flag = myFlagOf(name);
   if (opt.countries.isNotEmpty && flag.isNotEmpty && !opt.countries.contains(flag)) return 'страна не выбрана';
   if (opt.hideInsecure && myInsecureReason(o) != null) return 'небезопасный';
+  final bad = myBadReason(opt.bad, o);
+  if (bad != null) return bad;
+  if (opt.allowTypes.isNotEmpty && !opt.allowTypes.contains(myProtoOf(o))) return 'протокол не для этой сети';
   return null;
 }
 
@@ -268,8 +319,74 @@ String? myProfileIdOf(String path) {
 Future<void> myAfterProfileWritten(String path) async {
   final file = File(path);
   if (!await file.exists()) return;
+  final orig = File(myOrigPath(path));
+  if (await orig.exists()) {
+    // прошлая версия подписки — для отката; и проверка, не подозрительное ли обновление
+    final oldText = await orig.readAsString();
+    await orig.copy(myPrevPath(path));
+    final reason = myCompareUpdate(oldText, await file.readAsString());
+    final id = myProfileIdOf(path);
+    if (reason != null && id != null) myOnSuspiciousUpdate?.call(id, reason);
+  }
   await file.copy(myOrigPath(path));
   await myApplyToFile(path);
+}
+
+/// Прошлая версия подписки (до последнего обновления).
+String myPrevPath(String path) => path.endsWith('.json') ? '${path.substring(0, path.length - 5)}.prev' : '$path.prev';
+
+/// Вызывается после добавления серверов в «Мои серверы» (сами серверы; пусто — все уже были).
+void Function(List<Map<String, dynamic>> servers)? myOnServersAdded;
+
+/// Вызывается, если обновление подписки выглядит подозрительно (id профиля, что не так).
+void Function(String profileId, String reason)? myOnSuspiciousUpdate;
+
+/// Откатить подписку на прошлую версию. false — прошлой версии нет.
+Future<bool> myRollbackProfile(String path) async {
+  final prev = File(myPrevPath(path));
+  if (!await prev.exists()) return false;
+  await prev.copy(myOrigPath(path));
+  await myApplyToFile(path);
+  return true;
+}
+
+List<Map<String, dynamic>> _myServersOf(String text) {
+  try {
+    final json = jsonDecode(text);
+    if (json is! Map<String, dynamic>) return const [];
+    return [
+      for (final key in const ['outbounds', 'endpoints'])
+        for (final o in (json[key] as List? ?? const []))
+          if (o is Map<String, dynamic> && !_mySkipTypes.contains(o['type'])) o,
+    ];
+  } catch (_) {
+    return const [];
+  }
+}
+
+/// Что подозрительного в обновлении подписки, или null.
+String? myCompareUpdate(String oldText, String newText) {
+  final a = _myServersOf(oldText), b = _myServersOf(newText);
+  if (a.length < 5) return null;
+  final reasons = <String>[];
+  final oldKeys = {for (final o in a) myServerKey(o)};
+  final newKeys = {for (final o in b) myServerKey(o)};
+  final kept = newKeys.where(oldKeys.contains).length;
+  if (b.isEmpty) {
+    reasons.add('в подписке не осталось серверов');
+  } else if (newKeys.length >= 3 && kept * 10 < oldKeys.length * 3) {
+    reasons.add('сменились почти все серверы (из ${oldKeys.length} прежних осталось $kept)');
+  }
+  final oldInsecure = a.where((o) => myInsecureReason(o) != null).length;
+  final newInsecure = b.where((o) => myInsecureReason(o) != null).length;
+  if (newInsecure >= 3 && newInsecure > oldInsecure * 2) reasons.add('появились серверы без защиты 🔓: $newInsecure');
+  final oldFlags = {for (final o in a) myFlagOf(myCleanName((o['tag'] ?? '').toString()))}..remove('');
+  final newFlags = [for (final o in b) myFlagOf(myCleanName((o['tag'] ?? '').toString()))]..removeWhere((f) => f.isEmpty);
+  final strange = newFlags.where((f) => !oldFlags.contains(f)).length;
+  if (oldFlags.isNotEmpty && newFlags.length >= 4 && strange * 2 > newFlags.length) {
+    reasons.add('большинство серверов из новых стран');
+  }
+  return reasons.isEmpty ? null : reasons.join('; ');
 }
 
 /// Пересобрать файл профиля из копии подписки по текущим настройкам.

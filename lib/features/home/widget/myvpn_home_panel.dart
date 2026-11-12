@@ -221,14 +221,13 @@ class MyHomePanel extends HookConsumerWidget {
     final currentTag = list == null ? null : myCurrentServerTag(list);
     MySession.onServer(currentTag);
 
-    // запоминаем рабочий сервер для этой сети (держится минуту с нормальным пингом)
-    final delay = list?.items.firstOrNull?.items.firstOrNull?.urlTestDelay ?? 0;
+    // запоминаем рабочий сервер для этой сети: держится минуту и через него реально идёт трафик
+    final traffic = MySession.down.fold<int>(0, (a, b) => a + b);
     final stable = currentTag != null &&
         MySession.stableTag == currentTag &&
         MySession.stableSince != null &&
         DateTime.now().difference(MySession.stableSince!) > const Duration(minutes: 1) &&
-        delay > 0 &&
-        delay < 65000;
+        traffic > 20 * 1024;
     useEffect(() {
       if (!stable || activeProfile == null || net.value == 'unknown') return null;
       unawaited(_myRememberWorking(ref, activeProfile, currentTag, net.value));

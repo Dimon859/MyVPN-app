@@ -1,7 +1,6 @@
 // MyVPN: журнал событий — что происходило, пока ты не смотрел.
 // Переключения сервера, белые списки, запасные подписки, детекторы, обновления подписок, включение и выключение VPN.
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';

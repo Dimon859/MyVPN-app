@@ -70,7 +70,7 @@ void main() {
 
   test('появились незащищённые и серверы из новых стран', () {
     final old = [for (var i = 0; i < 6; i++) vless('🇳🇱 S$i', '10.0.0.$i')];
-    final upd = [...old, for (var i = 0; i < 8; i++) ss('🇨🇳 Z$i', '10.5.0.$i')];
+    final upd = [...old, for (var i = 0; i < 8; i++) {...vless('🇨🇳 Z$i', '10.5.0.$i'), 'tls': {'enabled': false}}];
     final r = myCompareUpdate(sub(old), sub(upd))!;
     expect(r, contains('без защиты'));
     expect(r, contains('новых стран'));

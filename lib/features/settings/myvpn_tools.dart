@@ -303,35 +303,74 @@ Future<void> showMyDailyOff(BuildContext context, WidgetRef ref) async {
 // ---------- Скорость с VPN и без ----------
 
 abstract final class MySpeed {
-  static Future<double?> _measure(List<String> urls) async {
-    for (final url in urls) {
-      final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
+  /// Скорость скачивания в несколько потоков, как у Speedtest: [streams] потоков [seconds] секунд,
+  /// первые 1,5 секунды разгона не считаются. Если сервер не отвечает — берётся следующий из списка.
+  static Future<double?> _measure(List<String> urls, {int streams = 4, int seconds = 8}) async {
+    final total = Stopwatch()..start();
+    const warmup = Duration(milliseconds: 1500);
+    final deadline = Duration(seconds: seconds);
+    var counted = 0; // байты после разгона
+    var any = 0;
+    Duration? countFrom;
+
+    Future<void> worker(int n) async {
+      final client = HttpClient()
+        ..connectionTimeout = const Duration(seconds: 6)
+        ..userAgent = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15';
       try {
-        final sw = Stopwatch()..start();
-        final req = await client.getUrl(Uri.parse(url));
-        final resp = await req.close().timeout(const Duration(seconds: 10));
-        if (resp.statusCode != 200) continue;
-        var bytes = 0;
-        await for (final chunk in resp.timeout(const Duration(seconds: 10))) {
-          bytes += chunk.length;
-          if (sw.elapsed > const Duration(seconds: 12)) break;
+        var k = n;
+        var fails = 0;
+        while (total.elapsed < deadline && fails < urls.length * 2) {
+          final url = urls[k % urls.length];
+          try {
+            final req = await client.getUrl(Uri.parse(url));
+            final resp = await req.close().timeout(const Duration(seconds: 6));
+            if (resp.statusCode != 200) {
+              await resp.drain<void>();
+              fails++;
+              k++;
+              continue;
+            }
+            await for (final chunk in resp.timeout(const Duration(seconds: 5))) {
+              any += chunk.length;
+              if (total.elapsed >= warmup) {
+                countFrom ??= total.elapsed;
+                counted += chunk.length;
+              }
+              if (total.elapsed >= deadline) break;
+            }
+          } catch (_) {
+            fails++;
+            k++;
+          }
         }
-        sw.stop();
-        if (bytes >= 200000) return bytes * 8 / sw.elapsedMicroseconds; // Мбит/с
-      } catch (_) {
       } finally {
         client.close(force: true);
       }
     }
-    return null;
+
+    await Future.wait([for (var n = 0; n < streams; n++) worker(n)]);
+    total.stop();
+    if (any < 300000 || countFrom == null) return null;
+    final secs = (total.elapsed - countFrom!).inMicroseconds / 1e6;
+    if (secs < 1 || counted < 200000) return null;
+    return counted * 8 / secs / 1e6; // Мбит/с
   }
 
-  /// Замер скорости скачивания: без VPN — до российского сервера, через VPN — до Cloudflare.
+  /// Замер скорости скачивания: без VPN — до российского сервера, через VPN — до зарубежного.
   static Future<double?> run({required bool viaVpn}) async {
     final mbps = await _measure(
       viaVpn
-          ? ['https://speed.cloudflare.com/__down?bytes=15000000', 'https://speedtest.selectel.ru/10MB']
-          : ['https://speedtest.selectel.ru/10MB', 'https://speed.cloudflare.com/__down?bytes=15000000'],
+          ? [
+              'https://speed.cloudflare.com/__down?bytes=50000000',
+              'https://fsn1-speed.hetzner.com/100MB.bin',
+              'https://proof.ovh.net/files/100Mb.dat',
+            ]
+          : [
+              'https://speedtest.selectel.ru/100MB',
+              'https://speed.cloudflare.com/__down?bytes=50000000',
+              'https://fsn1-speed.hetzner.com/100MB.bin',
+            ],
     );
     if (mbps != null) {
       try {

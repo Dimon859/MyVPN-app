@@ -313,15 +313,17 @@ class MyHomePanel extends HookConsumerWidget {
                 speedBusy.value = false;
                 speedTick.value++;
                 if (context.mounted) {
-                  mySnack(context, r == null ? 'Не удалось замерить скорость' : '${running ? 'Через VPN' : 'Без VPN'}: ${myMbps(r)}');
+                  mySnack(context, r == null ? 'Не удалось замерить скорость: серверы для замера не ответили' : '${running ? 'Через VPN' : 'Без VPN'}: ${myMbps(r)}');
                 }
               },
         child: Text(
           speedBusy.value
               ? 'Замеряю скорость…'
-              : 'Скорость: без VPN ${directSpeed == null ? '—' : myMbps(directSpeed.mbps)} · '
-                    'через VPN ${vpnSpeed == null ? '—' : myMbps(vpnSpeed.mbps)}',
+              : 'Скорость (нажми, чтобы замерить ${running ? 'через VPN' : 'без VPN'}):\n'
+                    'без VPN ${directSpeed == null ? '—' : '${myMbps(directSpeed.mbps)}, ${_myAgo(directSpeed.at)}'}\n'
+                    'через VPN ${vpnSpeed == null ? '—' : '${myMbps(vpnSpeed.mbps)}, ${_myAgo(vpnSpeed.at)}'}',
           style: muted,
+          textAlign: TextAlign.center,
         ),
       ),
     );
@@ -519,4 +521,13 @@ Future<void> showMyAddSummary(BuildContext context, WidgetRef ref, String url) a
       ),
     );
   } catch (_) {}
+}
+
+/// «только что», «5 мин назад», «3 ч назад», «12.11».
+String _myAgo(DateTime at) {
+  final d = DateTime.now().difference(at);
+  if (d.inMinutes < 1) return 'только что';
+  if (d.inMinutes < 60) return '${d.inMinutes} мин назад';
+  if (d.inHours < 24) return '${d.inHours} ч назад';
+  return '${at.day.toString().padLeft(2, '0')}.${at.month.toString().padLeft(2, '0')}';
 }

@@ -151,6 +151,37 @@ abstract final class MyWhitelist {
       id == null ? await p.remove('myvpn_wl_profile') : await p.setString('myvpn_wl_profile', id);
     } catch (_) {}
   }
+
+  /// Автопереключение на подписку для белых списков и обратно.
+  static Future<bool> auto() async {
+    try {
+      return (await SharedPreferences.getInstance()).getBool('myvpn_wl_auto') ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<void> setAuto(bool on) async {
+    try {
+      await (await SharedPreferences.getInstance()).setBool('myvpn_wl_auto', on);
+    } catch (_) {}
+  }
+
+  /// Подписка, с которой автоматически ушли на белые списки (на неё потом вернёмся).
+  static Future<String?> mainId() async {
+    try {
+      return (await SharedPreferences.getInstance()).getString('myvpn_wl_main');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> setMainId(String? id) async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      id == null ? await p.remove('myvpn_wl_main') : await p.setString('myvpn_wl_main', id);
+    } catch (_) {}
+  }
 }
 
 Future<List<ProfileEntity>> myAllProfiles(WidgetRef ref) async {
@@ -605,6 +636,7 @@ class MyToolsTiles extends HookConsumerWidget {
           subtitle: const Text('Её Tunnex предложит, когда заметит белые списки'),
           onTap: () => showMyWhitelistProfile(context, ref),
         ),
+        const _MyWlAutoTile(),
         ListTile(
           leading: const Icon(Icons.network_check_rounded),
           title: const Text('Проверка сети'),
@@ -612,6 +644,30 @@ class MyToolsTiles extends HookConsumerWidget {
           onTap: () => showMyNetworkCheck(context, ref),
         ),
       ],
+    );
+  }
+}
+
+class _MyWlAutoTile extends HookWidget {
+  const _MyWlAutoTile();
+
+  @override
+  Widget build(BuildContext context) {
+    final tick = useState(0);
+    final on = useFuture(useMemoized(MyWhitelist.auto, [tick.value])).data ?? false;
+    return SwitchListTile(
+      secondary: const Icon(Icons.swap_horiz_rounded),
+      title: const Text('Автопереключение при белых списках'),
+      subtitle: const Text(
+        'На мобильной сети сам перейдёт на подписку для белых списков, '
+        'а когда их снимут или появится Wi-Fi — вернётся обратно. Работает, пока приложение открыто.',
+      ),
+      value: on,
+      onChanged: (v) async {
+        await MyWhitelist.setAuto(v);
+        if (!v) await MyWhitelist.setMainId(null);
+        tick.value++;
+      },
     );
   }
 }

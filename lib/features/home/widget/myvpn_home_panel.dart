@@ -160,6 +160,20 @@ class MyHomePanel extends HookConsumerWidget {
     final asn = asnRaw.isEmpty ? '' : (asnRaw.toUpperCase().startsWith('AS') ? asnRaw.toUpperCase() : 'AS$asnRaw');
     final fullOrg = useFuture(useMemoized(() => myAsnHolder(asn), [asn])).data;
     final activeProfile = ref.watch(activeProfileProvider).valueOrNull;
+
+    // автопереключение при белых списках (проверка раз в 30 секунд, пока приложение открыто)
+    useEffect(() {
+      Future<void> run() async {
+        if (context.mounted) await MyWlAuto.tick(context, ref);
+      }
+
+      final first = Timer(const Duration(seconds: 5), () => unawaited(run()));
+      final timer = Timer.periodic(const Duration(seconds: 30), (_) => unawaited(run()));
+      return () {
+        first.cancel();
+        timer.cancel();
+      };
+    }, const []);
     final tick = useState(0);
     final net = useState('unknown');
     final whitelist = useState<String?>(null);
@@ -562,5 +576,88 @@ Future<String?> myAsnHolder(String asn) async {
     return null;
   } finally {
     client.close(force: true);
+  }
+}
+
+/// Автопереключение на подписку для белых списков и обратно.
+abstract final class MyWlAuto {
+  static bool _busy = false;
+  static int _strikes = 0;
+  static DateTime? _lastTryMain;
+  static String? _lastNet;
+
+  static Future<void> tick(BuildContext context, WidgetRef ref) async {
+    if (_busy) return;
+    _busy = true;
+    try {
+      if (!await MyWhitelist.auto()) return;
+      final wlId = await MyWhitelist.profileId();
+      if (wlId == null) return;
+      final profiles = await myAllProfiles(ref);
+      final wl = profiles.where((p) => p.id == wlId).firstOrNull;
+      if (wl == null) return;
+      final active = await ref.read(activeProfileProvider.future);
+      final running = ref.read(serviceRunningProvider);
+      final net = await myNetType();
+      final netChanged = _lastNet != null && _lastNet != net;
+      _lastNet = net;
+      final mainId = await MyWhitelist.mainId();
+      final main = profiles.where((p) => p.id == mainId).firstOrNull;
+
+      void say(String text) {
+        if (context.mounted) mySnack(context, text);
+      }
+
+      if (active?.id != wlId) {
+        // основная подписка: следим, не включились ли белые списки (только на мобильной сети)
+        if (net != 'cell') {
+          _strikes = 0;
+          return;
+        }
+        final r = await myDetectWhitelist();
+        _strikes = r == 'whitelist' ? _strikes + 1 : 0;
+        // без VPN хватает одной проверки; с VPN — двух подряд (чтобы не путать с упавшим сервером)
+        if (_strikes < (running ? 2 : 1)) return;
+        _strikes = 0;
+        await MyWhitelist.setMainId(active?.id);
+        _lastTryMain = DateTime.now();
+        if (running) {
+          await myConnectTo(ref, wl);
+          say('📶 Похоже на белые списки — переключил на «${wl.name}»');
+        } else {
+          final repo = await ref.read(profileRepositoryProvider.future);
+          await repo.setAsActive(wl.id).run();
+          say('📶 Похоже на белые списки — выбрана «${wl.name}». Нажмите кнопку, чтобы подключиться');
+        }
+        return;
+      }
+
+      // сейчас подписка для белых списков: пробуем вернуться на основную
+      if (main == null) return; // на белые списки перешли вручную — ничего не трогаем
+      if (!running) {
+        if (net == 'wifi' || await myDetectWhitelist() == 'ok') {
+          final repo = await ref.read(profileRepositoryProvider.future);
+          await repo.setAsActive(main.id).run();
+          await MyWhitelist.setMainId(null);
+          say('Белых списков нет — снова выбрана «${main.name}»');
+        }
+        return;
+      }
+      final due = _lastTryMain == null || DateTime.now().difference(_lastTryMain!) > const Duration(minutes: 15);
+      if (!(net == 'wifi' && netChanged) && !due) return;
+      _lastTryMain = DateTime.now();
+      await myConnectTo(ref, main);
+      await Future<void>.delayed(const Duration(seconds: 20));
+      if (await myDetectWhitelist() == 'ok') {
+        await MyWhitelist.setMainId(null);
+        say('Белые списки сняли — вернулся на «${main.name}»');
+      } else {
+        await myConnectTo(ref, wl);
+        await MyWhitelist.setMainId(main.id);
+      }
+    } catch (_) {
+    } finally {
+      _busy = false;
+    }
   }
 }

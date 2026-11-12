@@ -172,13 +172,17 @@ class MyLeakResult {
 /// Проверка утечек: настоящий IP (через российский сайт, он идёт напрямую), IP через VPN, IPv6 и DNS-серверы.
 Future<MyLeakResult> myLeakTest() async {
   final r = MyLeakResult();
-  await Future.wait([
+  await Future.wait<void>([
     () async {
       final t = await _myGet('https://yandex.ru/internet/api/v0/ip');
       r.realIp = t?.replaceAll('"', '').trim();
     }(),
-    () async => r.vpnIp = await myExitIp(),
-    () async => r.ipv6 = (await _myGet('https://api6.ipify.org', timeout: const Duration(seconds: 5)))?.trim(),
+    () async {
+      r.vpnIp = await myExitIp();
+    }(),
+    () async {
+      r.ipv6 = (await _myGet('https://api6.ipify.org', timeout: const Duration(seconds: 5)))?.trim();
+    }(),
     () async {
       // DNS: bash.ws видит, какие DNS-серверы спрашивали случайные имена
       final id = (await _myGet('https://bash.ws/id'))?.trim();

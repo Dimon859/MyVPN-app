@@ -5,6 +5,7 @@
 // Ещё здесь показывается сводка по только что добавленной подписке.
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -155,6 +156,9 @@ class MyHomePanel extends HookConsumerWidget {
     final stats = running ? ref.watch(statsNotifierProvider).valueOrNull : null;
     final list = running ? ref.watch(mainOutboundsNotifierProvider).valueOrNull : null;
     final ipInfo = running ? ref.watch(ipInfoNotifierProvider).valueOrNull : null;
+    final asnRaw = (ipInfo?.asn ?? '').trim();
+    final asn = asnRaw.isEmpty ? '' : (asnRaw.toUpperCase().startsWith('AS') ? asnRaw.toUpperCase() : 'AS$asnRaw');
+    final fullOrg = useFuture(useMemoized(() => myAsnHolder(asn), [asn])).data;
     final activeProfile = ref.watch(activeProfileProvider).valueOrNull;
     final tick = useState(0);
     final net = useState('unknown');
@@ -271,8 +275,8 @@ class MyHomePanel extends HookConsumerWidget {
       if (ipInfo != null) {
         final host = [
           if ((ipInfo.city ?? '').isNotEmpty) ipInfo.city!,
-          if ((ipInfo.org ?? '').isNotEmpty) ipInfo.org!,
-          if ((ipInfo.asn ?? '').isNotEmpty) (ipInfo.asn!.toUpperCase().startsWith('AS') ? ipInfo.asn! : 'AS${ipInfo.asn}'),
+          if ((fullOrg ?? ipInfo.org ?? '').isNotEmpty) fullOrg ?? ipInfo.org!,
+          if (asn.isNotEmpty) asn,
         ].join(' · ');
         if (host.isNotEmpty) children.add(Text('📍 $host', style: muted, textAlign: TextAlign.center));
       }
@@ -530,4 +534,33 @@ String _myAgo(DateTime at) {
   if (d.inMinutes < 60) return '${d.inMinutes} мин назад';
   if (d.inHours < 24) return '${d.inHours} ч назад';
   return '${at.day.toString().padLeft(2, '0')}.${at.month.toString().padLeft(2, '0')}';
+}
+
+final _myAsnCache = <String, String>{};
+
+/// Полное название владельца AS из базы RIPE (например «PLAY2GO - FZCO»), с запоминанием.
+Future<String?> myAsnHolder(String asn) async {
+  if (asn.isEmpty) return null;
+  if (_myAsnCache.containsKey(asn)) return _myAsnCache[asn];
+  final p = await SharedPreferences.getInstance();
+  final saved = p.getString('myvpn_asn_$asn');
+  if (saved != null) return _myAsnCache[asn] = saved;
+  final client = HttpClient()..connectionTimeout = const Duration(seconds: 6);
+  try {
+    final req = await client.getUrl(Uri.parse('https://stat.ripe.net/data/as-overview/data.json?resource=$asn'));
+    final resp = await req.close().timeout(const Duration(seconds: 8));
+    if (resp.statusCode != 200) return null;
+    final body = await resp.transform(utf8.decoder).join().timeout(const Duration(seconds: 8));
+    final holder = (((jsonDecode(body) as Map)['data'] as Map?)?['holder'] ?? '').toString().trim();
+    if (holder.isEmpty) return null;
+    // «PLAY2GO-FZCO - PLAY2GO - FZCO» → «PLAY2GO - FZCO»
+    final i = holder.indexOf(' - ');
+    final name = i > 0 && i + 3 < holder.length ? holder.substring(i + 3).trim() : holder;
+    await p.setString('myvpn_asn_$asn', name);
+    return _myAsnCache[asn] = name;
+  } catch (_) {
+    return null;
+  } finally {
+    client.close(force: true);
+  }
 }

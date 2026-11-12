@@ -28,6 +28,6 @@ void main() {
     expect(r[0].outbound, Outbound.direct);
     expect(r[0].domainRegexes, ['.*']);
     expect(r[1].portRanges, ['0:65535']);
-    expect(r[0].listOrder < 0 && r[1].listOrder < 0, isTrue);
+    expect([for (final x in r) x.listOrder], [0, 1, 2, 3, 4, 5, 6]);
   });
 }

@@ -55,23 +55,11 @@ List<Rule> myRulesForMode(List<Rule> rules, String mode) {
             r,
       ];
     case 'direct':
-      // всё напрямую, включая DNS: два правила в самом начале списка
+      // всё напрямую, включая DNS: два правила в самом начале, остальные сдвигаются (копии, чтобы не трогать список)
       return [
-        Rule(
-          listOrder: -2,
-          enabled: true,
-          name: 'myvpn:direct-names',
-          outbound: Outbound.direct,
-          domainRegexes: ['.*'],
-        ),
-        Rule(
-          listOrder: -1,
-          enabled: true,
-          name: 'myvpn:direct-all',
-          outbound: Outbound.direct,
-          portRanges: ['0:65535'],
-        ),
-        ...rules,
+        Rule(listOrder: 0, enabled: true, name: 'myvpn:direct-names', outbound: Outbound.direct, domainRegexes: ['.*']),
+        Rule(listOrder: 1, enabled: true, name: 'myvpn:direct-all', outbound: Outbound.direct, portRanges: ['0:65535']),
+        for (final r in rules) r.deepCopy()..listOrder = r.listOrder + 2,
       ];
     default:
       return rules;

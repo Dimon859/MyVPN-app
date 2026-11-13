@@ -11,6 +11,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:hiddify/features/route_rules/myvpn_rule_import.dart';
+import 'package:hiddify/utils/myvpn_xray_names.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const myHideMark = ' §hide§⛔';
@@ -94,6 +96,12 @@ abstract final class MyMarks {
   static Map<String, String> bad = {}; // ключ сервера → что нашли детекторы (🧊, ⚠️)
   static Map<String, Set<String>> typesByNet = {}; // сеть (wifi/cell) → разрешённые протоколы; пусто — все
   static Set<String> allowTypes = {}; // протоколы для текущей сети (выставляется при смене сети)
+  /// Группы подписок (Xray JSON): id профиля → группа → ключи серверов.
+  static Map<String, Map<String, List<String>>> subGroups = {};
+  /// Правила подписок: id профиля → правила (MyRuleSpec в JSON).
+  static Map<String, List<Map<String, dynamic>>> subRules = {};
+  /// Подписки, у которых свои правила выключены.
+  static Set<String> subRulesOff = {};
   static Future<void>? _loading;
 
   static Future<void> load() => _loading ??= () async {
@@ -122,6 +130,21 @@ abstract final class MyMarks {
         };
       }
       allowTypes = (p.getStringList('myvpn_allow_types') ?? const []).toSet();
+      final meta = p.getString('myvpn_sub_meta');
+      if (meta != null) {
+        final m = jsonDecode(meta) as Map;
+        subGroups = {
+          for (final e in (m['g'] as Map? ?? const {}).entries)
+            e.key.toString(): {
+              for (final g in (e.value as Map).entries) g.key.toString(): [for (final k in g.value as List) k.toString()],
+            },
+        };
+        subRules = {
+          for (final e in (m['r'] as Map? ?? const {}).entries)
+            e.key.toString(): [for (final r in e.value as List) (r as Map).cast<String, dynamic>()],
+        };
+      }
+      subRulesOff = (p.getStringList('myvpn_sub_rules_off') ?? const []).toSet();
     } catch (_) {}
   }();
 
@@ -142,6 +165,8 @@ abstract final class MyMarks {
       await p.setString('myvpn_bad', jsonEncode(bad));
       await p.setString('myvpn_types_by_net', jsonEncode(typesByNet.map((k, v) => MapEntry(k, v.toList()))));
       await p.setStringList('myvpn_allow_types', allowTypes.toList());
+      await p.setString('myvpn_sub_meta', jsonEncode({'g': subGroups, 'r': subRules}));
+      await p.setStringList('myvpn_sub_rules_off', subRulesOff.toList());
     } catch (_) {}
   }
 
@@ -162,6 +187,7 @@ class MyTransformOptions {
     this.fingerprint = '',
     this.bad = const {},
     this.allowTypes = const {},
+    this.groups = const {},
   });
 
   factory MyTransformOptions.forProfile(String? profileId) => MyTransformOptions(
@@ -172,6 +198,7 @@ class MyTransformOptions {
     fingerprint: MyMarks.fingerprint,
     bad: MyMarks.bad,
     allowTypes: MyMarks.allowTypes,
+    groups: profileId == null ? const {} : MyMarks.subGroups[profileId] ?? const {},
   );
 
   final Set<String> hidden;
@@ -181,6 +208,7 @@ class MyTransformOptions {
   final String fingerprint;
   final Map<String, String> bad;
   final Set<String> allowTypes;
+  final Map<String, List<String>> groups; // группы подписки: имя → ключи серверов
 }
 
 /// Протокол сервера для людей: Reality, VLESS, Hysteria2, Trojan, Shadowsocks, VMess, TUIC, WireGuard…
@@ -214,7 +242,10 @@ String? myBadReason(Map<String, String> bad, Map<String, dynamic> o) {
 String? myHiddenReason(Map<String, dynamic> o, MyTransformOptions opt) {
   final name = myCleanName((o['tag'] ?? '').toString());
   if (myHasKey(opt.hidden, o)) return 'исключён вручную';
-  if (opt.section != null && myGroupKey(name) != opt.section) return 'не из выбранного раздела';
+  if (opt.section != null) {
+    final g = opt.groups[opt.section];
+    if (g != null ? !myHasKey(g.toSet(), o) : myGroupKey(name) != opt.section) return 'не из выбранной группы';
+  }
   final flag = myFlagOf(name);
   if (opt.countries.isNotEmpty && flag.isNotEmpty && !opt.countries.contains(flag)) return 'страна не выбрана';
   if (opt.hideInsecure && myInsecureReason(o) != null) return 'небезопасный';
@@ -254,6 +285,8 @@ String? myTransform(String origText, MyTransformOptions opt) {
       countries: opt.countries,
       hideInsecure: opt.hideInsecure,
       fingerprint: opt.fingerprint,
+      bad: opt.bad,
+      allowTypes: opt.allowTypes,
     );
     for (var i = 0; i < items.length; i++) {
       want[i] = myHiddenReason(items[i], relaxed) != null;
@@ -328,6 +361,7 @@ Future<void> myAfterProfileWritten(String path) async {
     final id = myProfileIdOf(path);
     if (reason != null && id != null) myOnSuspiciousUpdate?.call(id, reason);
   }
+  await myTakeSubMeta(path, await file.readAsString());
   await file.copy(myOrigPath(path));
   await myApplyToFile(path);
 }
@@ -407,3 +441,44 @@ Future<void> myApplyToFile(String path) async {
 
 /// Совместимость с прежним названием.
 Future<void> myApplyHiddenToFile(String path) => myApplyToFile(path);
+
+
+/// Группы и правила подписки, найденные при разборе (Xray JSON), привязать к записанному профилю.
+Future<void> myTakeSubMeta(String path, String text) async {
+  final id = myProfileIdOf(path);
+  if (id == null || MyXrayMeta.pending.isEmpty) return;
+  final items = <Map<String, dynamic>>[];
+  try {
+    final json = jsonDecode(text);
+    if (json is! Map<String, dynamic>) return;
+    for (final key in const ['outbounds', 'endpoints']) {
+      for (final o in (json[key] as List? ?? const [])) {
+        if (o is Map<String, dynamic> && !_mySkipTypes.contains(o['type'])) items.add(o);
+      }
+    }
+  } catch (_) {
+    return;
+  }
+  final keyByName = <String, String>{
+    for (final o in items) myCleanName((o['tag'] ?? '').toString()): myServerKey(o),
+  };
+  for (final meta in MyXrayMeta.pending.reversed.toList()) {
+    final names = {for (final g in meta.groups.values) ...g};
+    if (names.isEmpty && meta.rules.isEmpty) continue;
+    final found = names.where((n) => keyByName.containsKey(myCleanName(n))).length;
+    // профиль — тот, в котором нашлись почти все серверы групп
+    if (names.isNotEmpty && found * 10 < names.length * 8) continue;
+    MyXrayMeta.pending.remove(meta);
+    await MyMarks.load();
+    MyMarks.subGroups[id] = {
+      for (final g in meta.groups.entries)
+        g.key: [for (final n in g.value) ?keyByName[myCleanName(n)]],
+    }..removeWhere((_, v) => v.isEmpty);
+    if (MyMarks.subGroups[id]!.length < 2) MyMarks.subGroups.remove(id);
+    final skipped = <String>[];
+    MyMarks.subRules[id] = [for (final r in myRulesFromXray(meta.rules, skipped)) r.toJson()];
+    if (MyMarks.subRules[id]!.isEmpty) MyMarks.subRules.remove(id);
+    await MyMarks.save();
+    return;
+  }
+}

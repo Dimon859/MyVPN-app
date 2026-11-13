@@ -23,8 +23,13 @@ jobs:
         run: |
           set -e
           git clone -q --depth 1 -b rule-set https://github.com/hiddify/hiddify-geo up
-          mkdir -p new/sagernet
+          mkdir -p new/sagernet new/geosite new/geoip
           cp -R up/block up/country new/
+          # списки по сервисам и странам (geosite:vk, geoip:ru…) — для импортированных правил и правил подписок
+          git clone -q --depth 1 -b release https://github.com/runetfreedom/russia-v2ray-rules-dat rf
+          cp rf/sing-box/rule-set-geosite/geosite-*.srs new/geosite/
+          cp rf/sing-box/rule-set-geoip/geoip-*.srs new/geoip/
+          [ -s new/geosite/geosite-youtube.srs ] && [ -s new/geoip/geoip-ru.srs ] || { echo "::error::нет geosite/geoip"; exit 1; }
           for f in apple android googlefcm ubuntu debian fedora archlinux; do
             curl -fsSL --retry 5 -o "new/sagernet/geosite-$f.srs" \
               "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-$f.srs"
@@ -35,7 +40,7 @@ jobs:
             [ -s "$f" ] && [ "$(head -c 3 "$f")" = "SRS" ] || { echo "::error::плохой файл $f"; exit 1; }
             n=$((n+1))
           done
-          [ "$n" -ge 20 ] || { echo "::error::слишком мало файлов: $n"; exit 1; }
+          [ "$n" -ge 1000 ] || { echo "::error::слишком мало файлов: $n"; exit 1; }
           echo "✅ скачано наборов правил: $n"
 
       - name: Update branch rule-set
@@ -51,7 +56,7 @@ jobs:
           fi
           find out -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
           cp -R new/. out/
-          printf "# Правила маршрутизации MyVPN\n\nКопия наборов правил для приложения. Обновляется автоматически (Actions → Sync rule sets).\n\n- block/, country/ — из hiddify/hiddify-geo\n- sagernet/ — из SagerNet/sing-geosite\n" > out/README.md
+          printf "# Правила маршрутизации MyVPN\n\nКопия наборов правил для приложения. Обновляется автоматически (Actions → Sync rule sets).\n\n- block/, country/ — из hiddify/hiddify-geo\n- sagernet/ — из SagerNet/sing-geosite\n- geosite/, geoip/ — из runetfreedom/russia-v2ray-rules-dat (списки по сервисам и странам)\n" > out/README.md
           cd out
           git add -A
           if git diff --cached --quiet; then echo "✅ без изменений"; exit 0; fi

@@ -20,6 +20,7 @@ import 'package:hiddify/features/profile/notifier/profiles_update_notifier.dart'
 import 'package:hiddify/features/profile/widget/myvpn_profile_extras.dart';
 import 'package:hiddify/features/proxy/active/active_proxy_notifier.dart';
 import 'package:hiddify/features/proxy/data/proxy_data_providers.dart';
+import 'package:hiddify/features/route_rules/myvpn_routing_extras.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
 import 'package:hiddify/features/settings/myvpn_detectors.dart';
 import 'package:hiddify/features/settings/myvpn_events.dart';
@@ -94,7 +95,6 @@ abstract final class MyGuard {
       _lastNet = net;
 
       if (running != _wasRunning) {
-        myEvent(running ? 'VPN включён' : 'VPN выключен');
         _wasRunning = running;
         if (!running) {
           _checkedTag = null;
@@ -103,6 +103,7 @@ abstract final class MyGuard {
         }
       }
       if (netChanged) myEvent('Сеть: ${myNetName(net)}');
+      if (!running) await MyGeoUpdate.tick(ref);
 
       await MyMarks.load();
       // протоколы для этой сети
@@ -112,6 +113,7 @@ abstract final class MyGuard {
           MyMarks.allowTypes = {...want};
           await myApplyMarks(ref);
           myEvent('Протоколы для сети «${myNetName(net)}»: ${want.isEmpty ? 'все' : want.join(', ')}');
+          myReconnectReason('протоколы для сети');
           final active = await ref.read(activeProfileProvider.future);
           if (running && active != null) await myConnectTo(ref, active, reload: true);
           return;
@@ -304,6 +306,7 @@ Future<String?> myPickFastestDns(WidgetRef ref, {bool quiet = false}) async {
   if (ref.read(ConfigOptions.remoteDnsAddress) != url) {
     await ref.read(ConfigOptions.remoteDnsAddress.notifier).update(url);
     myEvent('Самый быстрый DNS: $best (${ok.first.value} мс)');
+    myReconnectReason('сменился DNS');
   }
   return '$best — ${ok.first.value} мс';
 }

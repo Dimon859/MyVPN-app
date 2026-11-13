@@ -11,6 +11,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hiddify/features/common/qr_code_dialog.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/profile/data/myvpn_marks.dart';
+import 'package:hiddify/features/connections/myvpn_connections.dart' show mySubRulesVersionProvider;
 import 'package:hiddify/features/stats/myvpn_counters.dart';
 import 'package:hiddify/features/profile/data/profile_data_providers.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
@@ -343,7 +344,19 @@ class _MyServersDialog extends HookConsumerWidget {
     ];
     var shown = myFilterServers(servers, query: query.value, type: type.value, flag: flag.value, onlyLte: onlyLte.value);
     if (onlyAlive.value) shown = [for (final s in shown) if (s.udp || pings.value[s.key] != null) s];
-    final groups = myGroupServers(shown);
+    // группы самой подписки (свой «Автовыбор» и т. п.) — сначала, потом остальные разделы
+    final subGroups = MyMarks.subGroups[profile.id] ?? const <String, List<String>>{};
+    final groups = <({String name, List<MyServer> servers, bool sub})>[
+      for (final g in subGroups.entries)
+        if ([for (final s in shown) if (g.value.contains(s.key)) s] case final list when list.isNotEmpty)
+          (name: g.key, servers: list, sub: true),
+    ];
+    final inSub = {for (final g in subGroups.values) ...g};
+    for (final g in myGroupServers([for (final s in shown) if (!inSub.contains(s.key)) s])) {
+      groups.add((name: g.name, servers: g.servers, sub: false));
+    }
+    final hasSubRules = MyMarks.subRules[profile.id]?.isNotEmpty ?? false;
+    final subRulesOn = hasSubRules && !MyMarks.subRulesOff.contains(profile.id);
     final visibleCount = servers.where((s) => !s.hidden).length;
     final links = [for (final s in shown) ?myOutboundToLink({...s.json, 'tag': s.name})];
     final section = MyMarks.sections[profile.id];
@@ -431,11 +444,18 @@ class _MyServersDialog extends HookConsumerWidget {
         dense: true,
         title: Text(
           marks.isEmpty ? s.name : '$marks ${s.name}',
-          maxLines: 1,
+          maxLines: 2,
           overflow: TextOverflow.ellipsis,
-          style: s.hidden ? const TextStyle(decoration: TextDecoration.lineThrough) : null,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            decoration: s.hidden ? TextDecoration.lineThrough : null,
+          ),
         ),
-        subtitle: Text(sub, maxLines: 2, overflow: TextOverflow.ellipsis),
+        subtitle: Text(
+          sub,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+        ),
         trailing: trailing,
         onTap: () async {
           final changed = await showMyServer(context, ref, s, profile);
@@ -454,18 +474,53 @@ class _MyServersDialog extends HookConsumerWidget {
       ),
     );
 
-    return AlertDialog(
-      title: Text(
-        '${profile.name}\n${myServersWord(visibleCount)} в автовыборе · ${myUpdatedText(profile.lastUpdate)}'
-        '${section != null ? '\n📂 раздел: $section' : ''}',
-      ),
-      titleTextStyle: theme.textTheme.titleMedium,
-      contentPadding: const EdgeInsets.only(top: 8),
-      content: SizedBox(
-        width: double.maxFinite,
+    final media = MediaQuery.of(context).size;
+    final headStyle = theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600);
+    final smallStyle = theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant);
+    Widget action(String label, VoidCallback? onTap, {IconData? icon}) => TextButton.icon(
+      style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+      icon: Icon(icon ?? Icons.circle, size: 18),
+      label: Text(label),
+      onPressed: onTap,
+    );
+
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 36),
+      clipBehavior: Clip.antiAlias,
+      child: SizedBox(
+        width: media.width,
+        height: media.height * 0.86,
         child: Column(
-          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 8, 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(profile.name, style: headStyle, maxLines: 1, overflow: TextOverflow.ellipsis),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${myServersWord(visibleCount)} в автовыборе · ${myUpdatedText(profile.lastUpdate)}',
+                          style: smallStyle,
+                        ),
+                        if (section != null) Text('📂 подключено к: $section', style: smallStyle),
+                        if (hasSubRules) Text('📜 правила подписки: ${subRulesOn ? 'включены' : 'выключены'}', style: smallStyle),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Закрыть',
+                    icon: const Icon(Icons.close_rounded),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
+            ),
             if (busy.value) const LinearProgressIndicator(minHeight: 2),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -479,7 +534,7 @@ class _MyServersDialog extends HookConsumerWidget {
               ),
             ),
             SizedBox(
-              height: 44,
+              height: 46,
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -504,40 +559,47 @@ class _MyServersDialog extends HookConsumerWidget {
                 ],
               ),
             ),
-            Flexible(
+            Expanded(
               child: shown.isEmpty
-                  ? const Padding(padding: EdgeInsets.all(24), child: Text('Ничего не найдено'))
+                  ? const Center(child: Text('Ничего не найдено'))
                   : ListView.builder(
-                      shrinkWrap: true,
                       itemCount: groups.length,
                       itemBuilder: (context, i) {
                         final g = groups[i];
-                        if (g.servers.length == 1) return tile(g.servers.first);
+                        if (g.servers.length == 1 && !g.sub) return tile(g.servers.first);
                         final alive = g.servers.where((s) => pings.value[s.key] != null).length;
                         final tested = g.servers.where((s) => pings.value.containsKey(s.key)).length;
                         final isSection = section == g.name;
+                        final count = tested == 0
+                            ? myServersWord(g.servers.length)
+                            : '${myServersWord(g.servers.length)} · отвечают $alive';
                         return ExpansionTile(
                           initiallyExpanded: groups.length == 1 || query.value.isNotEmpty,
                           shape: const Border(),
                           collapsedShape: const Border(),
+                          tilePadding: const EdgeInsets.symmetric(horizontal: 16),
                           title: Text(
-                            isSection ? '📂 ${g.name}' : g.name,
+                            '${g.sub ? '⚡ ' : ''}${isSection ? '📂 ' : ''}${g.name}',
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
                           ),
-                          subtitle: Text(
-                            tested == 0
-                                ? myServersWord(g.servers.length)
-                                : '${myServersWord(g.servers.length)} · отвечают $alive',
-                          ),
+                          subtitle: Text(g.sub ? 'группа подписки · $count' : count, style: smallStyle),
                           childrenPadding: const EdgeInsetsDirectional.only(start: 12),
                           children: [
                             Align(
                               alignment: AlignmentDirectional.centerStart,
-                              child: TextButton.icon(
-                                icon: Icon(isSection ? Icons.layers_clear_rounded : Icons.play_arrow_rounded),
-                                label: Text(isSection ? 'Автовыбор по всей подписке' : 'Подключить раздел (автовыбор в нём)'),
-                                onPressed: busy.value ? null : () => connectSection(isSection ? null : g.name),
+                              child: Padding(
+                                padding: const EdgeInsetsDirectional.only(start: 4, bottom: 4),
+                                child: FilledButton.tonalIcon(
+                                  icon: Icon(isSection ? Icons.layers_clear_rounded : Icons.play_arrow_rounded),
+                                  label: Text(
+                                    isSection
+                                        ? 'Автовыбор по всей подписке'
+                                        : (g.sub ? 'Подключиться к группе' : 'Подключить раздел (автовыбор в нём)'),
+                                  ),
+                                  onPressed: busy.value ? null : () => connectSection(isSection ? null : g.name),
+                                ),
                               ),
                             ),
                             for (final s in g.servers) tile(s),
@@ -546,22 +608,44 @@ class _MyServersDialog extends HookConsumerWidget {
                       },
                     ),
             ),
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+              child: Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 2,
+                children: [
+                  action(pinging.value ? 'Пинг…' : 'Пинг TCP', pinging.value ? null : runPing, icon: Icons.network_ping_rounded),
+                  if (flags.length > 1) action('Страны', busy.value ? null : chooseCountries, icon: Icons.flag_outlined),
+                  if (section != null)
+                    action('Вся подписка', busy.value ? null : () => connectSection(null), icon: Icons.layers_clear_rounded),
+                  if (hasSubRules)
+                    action(
+                      subRulesOn ? 'Правила подписки: выкл' : 'Правила подписки: вкл',
+                      () async {
+                        if (subRulesOn) {
+                          MyMarks.subRulesOff.add(profile.id);
+                        } else {
+                          MyMarks.subRulesOff.remove(profile.id);
+                        }
+                        await MyMarks.save();
+                        ref.read(mySubRulesVersionProvider.notifier).state++;
+                        reload.value++;
+                      },
+                      icon: Icons.rule_rounded,
+                    ),
+                  if (links.isNotEmpty)
+                    action(
+                      'Копировать все',
+                      () => _myCopy(context, links.join('\n'), 'Скопировано ссылок: ${links.length}'),
+                      icon: Icons.copy_all_rounded,
+                    ),
+                ],
+              ),
+            ),
           ],
         ),
       ),
-      actionsOverflowButtonSpacing: 4,
-      actions: [
-        TextButton(onPressed: pinging.value ? null : runPing, child: Text(pinging.value ? 'Пинг…' : 'Пинг TCP')),
-        if (flags.length > 1) TextButton(onPressed: busy.value ? null : chooseCountries, child: const Text('Страны')),
-        if (section != null)
-          TextButton(onPressed: busy.value ? null : () => connectSection(null), child: const Text('Все разделы')),
-        if (links.isNotEmpty)
-          TextButton(
-            onPressed: () => _myCopy(context, links.join('\n'), 'Скопировано ссылок: ${links.length}'),
-            child: const Text('Копировать все'),
-          ),
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Закрыть')),
-      ],
     );
   }
 }

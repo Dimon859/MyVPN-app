@@ -12,7 +12,11 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hiddify/core/preferences/preferences_provider.dart';
 import 'package:hiddify/core/utils/preferences_utils.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
+import 'package:hiddify/features/profile/data/myvpn_marks.dart';
+import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
+import 'package:hiddify/features/route_rules/myvpn_rule_import.dart';
 import 'package:hiddify/features/route_rules/notifier/rules_notifier.dart';
+import 'package:hiddify/features/settings/myvpn_events.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
 import 'package:hiddify/hiddifycore/generated/v2/config/route_rule.pb.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -41,6 +45,35 @@ final myRouteModeProvider = PreferencesNotifier.create<String, String>(
 );
 
 const myRouteModes = {'rule': 'Правила', 'global': 'Глобально', 'direct': 'Напрямую'};
+
+/// Источник списков geosite/geoip: id готового, «custom|сайты|ip» или «none».
+final myGeoSourceProvider = PreferencesNotifier.create<String, String>('myvpn-geo-source', 'tunnex');
+
+/// Меняется, когда включают или выключают правила подписки — чтобы пересобрать настройки ядра.
+final mySubRulesVersionProvider = StateProvider<int>((ref) => 0);
+
+final _myMarksLoadedProvider = FutureProvider<void>((ref) => MyMarks.load());
+
+/// id активного профиля (для правил подписки).
+final myActiveProfileIdProvider = Provider<String?>(
+  (ref) => ref.watch(activeProfileProvider.select((v) => v.valueOrNull?.id)),
+);
+
+/// Правила для ядра: свои + правила активной подписки, списки из выбранного источника, режим.
+List<Rule> myRulesForConfig(Ref ref, List<Rule> rules, String mode) {
+  ref.watch(_myMarksLoadedProvider);
+  ref.watch(mySubRulesVersionProvider);
+  final id = ref.watch(myActiveProfileIdProvider);
+  final all = [...rules];
+  final sub = id == null || MyMarks.subRulesOff.contains(id) ? null : MyMarks.subRules[id];
+  if (sub != null && sub.isNotEmpty) {
+    var order = all.fold<int>(0, (m, r) => r.listOrder > m ? r.listOrder : m) + 1;
+    for (final j in sub) {
+      all.add(MyRuleSpec.fromJson(j).toRule('📦 правило подписки')..listOrder = order++);
+    }
+  }
+  return myRulesForMode(myResolveGeo(all, ref.watch(myGeoSourceProvider)), mode);
+}
 
 /// Правила, которые уйдут в ядро в выбранном режиме.
 List<Rule> myRulesForMode(List<Rule> rules, String mode) {
@@ -88,6 +121,7 @@ class MyRouteModeSwitch extends ConsumerWidget {
         ],
         selected: {mode},
         onSelectionChanged: (s) async {
+          myReconnectReason('режим «${myRouteModes[s.first]}»');
           await ref.read(myRouteModeProvider.notifier).update(s.first);
           if (!context.mounted) return;
           final text = switch (s.first) {

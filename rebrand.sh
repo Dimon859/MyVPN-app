@@ -680,6 +680,7 @@ def tile(s):
         ("import 'package:hiddify/features/profile/model/profile_entity.dart';\n",
          "import 'package:hiddify/features/profile/model/profile_entity.dart';\n"
          "import 'package:hiddify/features/profile/widget/myvpn_profile_extras.dart';\n"
+         "import 'package:hiddify/features/settings/myvpn_hwid.dart';\n"
          "import 'package:hiddify/features/settings/myvpn_update_check.dart';\n"
          "import 'package:hiddify/features/stats/myvpn_counters.dart';\n"),
         ("    final nameText = Text(\n      profile.name,\n",
@@ -691,6 +692,8 @@ def tile(s):
          "        onTap: () => showMyServers(context, ref, profile),\n      ),\n"
          "      AdaptiveMenuItem(\n        title: 'Трафик и лимит',\n        leadingIcon: const Icon(Icons.data_usage_rounded),\n"
          "        onTap: () => showMyCounter(context, profile.name),\n      ),\n"
+         "      if (profile case RemoteProfileEntity())\n        AdaptiveMenuItem(\n          title: 'HWID для этой подписки',\n"
+         "          leadingIcon: const Icon(Icons.badge_outlined),\n          onTap: () => showMySubHwid(context, profile),\n        ),\n"
          "      if (profile case RemoteProfileEntity())\n        AdaptiveMenuItem(\n          title: 'Откатить последнее обновление',\n"
          "          leadingIcon: const Icon(Icons.history_rounded),\n"
          "          onTap: () async {\n            final ok = await myRollback(ref, profile);\n"
@@ -710,12 +713,39 @@ MY_HWID = r"""
   static Future<String>? _myIdF;
   static Future<String> myHwid() => _myIdF ??= _myHwidHeaders().then((h) => h['x-hwid'] ?? '');
   static Future<Map<String, String>>? _myHw;
+  /// Сбросить запомненный HWID (после смены в настройках).
+  static void myHwidReset() {
+    _myHw = null;
+    _myIdF = null;
+  }
+
+  /// Ключ подписки для своего HWID: адрес без параметров.
+  static String myHwidKey(String url) {
+    final u = Uri.tryParse(url.trim());
+    return u == null || u.host.isEmpty ? url.trim() : '${u.host}${u.path}';
+  }
+
+  /// Заголовки для конкретной подписки: свой HWID у подписки → он; «не отправлять» → ничего; иначе общий.
+  static Future<Map<String, String>> myHwidHeadersFor(String url, bool enabled) async {
+    final base = await _myHwidHeaders();
+    Object? v;
+    try {
+      final by = jsonDecode((await SharedPreferences.getInstance()).getString('myvpn_hwid_by_sub') ?? '{}');
+      if (by is Map) v = by[myHwidKey(url)];
+    } catch (_) {}
+    if (v == null) return enabled ? base : const {};
+    if (v == '') return const {};
+    if (v == 'device') return base;
+    return {...base, 'x-hwid': v.toString()};
+  }
+
   static Future<Map<String, String>> _myHwidHeaders() => _myHw ??= () async {
     var id = '';
     try {
       final prefs = await SharedPreferences.getInstance();
-      id = prefs.getString('myvpn_hwid') ?? '';
-      if (!RegExp(r'^[a-zA-Z0-9=-]{10,64}$').hasMatch(id)) {
+      final custom = prefs.getString('myvpn_hwid_custom') ?? '';
+      id = custom.isNotEmpty ? custom : prefs.getString('myvpn_hwid') ?? '';
+      if (custom.isEmpty && !RegExp(r'^[a-zA-Z0-9=-]{10,64}$').hasMatch(id)) {
         id = const Uuid().v4().replaceAll('-', '');
         await prefs.setString('myvpn_hwid', id);
       }
@@ -739,7 +769,7 @@ def hwid(s):
          "import 'package:hiddify/utils/custom_loggers.dart';\nimport 'package:shared_preferences/shared_preferences.dart';\nimport 'package:uuid/uuid.dart';\n"),
         ("  Future<Response> download(\n", MY_HWID.lstrip("\n") + "  Future<Response> download(\n"),
         ("      options: _options(url, userAgent: userAgent, credentials: credentials),\n    );\n  }\n",
-         "      options: _options(url, userAgent: userAgent, credentials: credentials)\n        ..headers?.addAll({\n          // MyVPN: названия серверов и описания на русском, если панель их переводит\n          'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.8',\n          if (myHwidEnabled) ...await _myHwidHeaders(),\n        }),\n    );\n  }\n"),
+         "      options: _options(url, userAgent: userAgent, credentials: credentials)\n        ..headers?.addAll({\n          // MyVPN: названия серверов и описания на русском, если панель их переводит\n          'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.8',\n          ...await myHwidHeadersFor(url, myHwidEnabled),\n        }),\n    );\n  }\n"),
     ]:
         assert s.count(a) == 1, a.strip()[:50]
         s = s.replace(a, b)
@@ -772,22 +802,15 @@ HWID_TILES = """          SwitchListTile.adaptive(
               leading: const Icon(Icons.badge_outlined),
               title: const Text('HWID устройства'),
               subtitle: Text(snap.data ?? '…', style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
-              trailing: const Icon(Icons.copy_rounded, size: 20),
-              onTap: () {
-                final id = snap.data;
-                if (id == null || id.isEmpty) return;
-                Clipboard.setData(ClipboardData(text: id));
-                ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-                  const SnackBar(content: Text('HWID скопирован'), duration: Duration(seconds: 2)),
-                );
-              },
+              trailing: const Icon(Icons.edit_rounded, size: 20),
+              onTap: () => showMyHwidDialog(context),
             ),
           ),
 """
 def hwid_tiles(s):
     for a, b in [
         ("import 'package:flutter/material.dart';\n",
-         "import 'package:flutter/material.dart';\nimport 'package:flutter/services.dart';\nimport 'package:hiddify/core/http_client/dio_http_client.dart';\n"),
+         "import 'package:flutter/material.dart';\nimport 'package:flutter/services.dart';\nimport 'package:hiddify/core/http_client/dio_http_client.dart';\nimport 'package:hiddify/features/settings/myvpn_hwid.dart';\n"),
         ("            presentChoice: (value) => _myUserAgents[value] ?? value,\n          ),\n",
          "            presentChoice: (value) => _myUserAgents[value] ?? value,\n          ),\n" + HWID_TILES),
     ]:
@@ -901,6 +924,22 @@ def malware_rule(s):
         s = s.replace(a, b)
     return s
 edit("lib/features/route_rules/notifier/rules_notifier.dart", malware_rule)
+def torrent_quic_rules(s):
+    for a, b in [
+        ("  blockMalware(enabledByDefault: false),\n",
+         "  torrentsDirect(enabledByDefault: false),\n  blockQuic(enabledByDefault: false),\n  blockMalware(enabledByDefault: false),\n"),
+        ("    blockMalware => 'Блокировать вирусные и фишинговые сайты',\n",
+         "    torrentsDirect => 'Торренты напрямую',\n    blockQuic => 'Блокировать QUIC (UDP 443) — всё пойдёт по TCP',\n"
+         "    blockMalware => 'Блокировать вирусные и фишинговые сайты',\n"),
+        ("    blockMalware => Rule(\n",
+         "    torrentsDirect => Rule(outbound: Outbound.direct, protocols: [Protocol.bittorrent]),\n"
+         "    blockQuic => Rule(outbound: Outbound.block, network: Network.udp, portRanges: ['443']),\n"
+         "    blockMalware => Rule(\n"),
+    ]:
+        assert s.count(a) == 1, a.strip()[:40]
+        s = s.replace(a, b)
+    return s
+edit("lib/features/route_rules/notifier/rules_notifier.dart", torrent_quic_rules)
 
 # 26. Главный экран: панель под кнопкой (время сессии, график, сервер, белые списки, скорость)
 for f in ["lib/features/home/widget/myvpn_home_panel.dart", "lib/features/settings/myvpn_tools.dart", "lib/utils/myvpn_telegram.dart"]:
@@ -1074,7 +1113,7 @@ def modes(s):
         ("      clashApiPort: ref.watch(clashApiPort),\n",
          "      clashApiPort: ref.watch(clashApiPort),\n      webSecret: ref.watch(myWebSecretProvider), // MyVPN\n"),
         ("      routeRule: RouteRule(rules: ref.watch(rulesNotifierProvider)).toProto3Json()! as Map<String, dynamic>,\n",
-         "      routeRule: RouteRule(rules: myRulesForMode(ref.watch(rulesNotifierProvider), ref.watch(myRouteModeProvider)))\n"
+         "      routeRule: RouteRule(rules: myRulesForConfig(ref, ref.watch(rulesNotifierProvider), ref.watch(myRouteModeProvider)))\n"
          "          .toProto3Json()! as Map<String, dynamic>, // MyVPN: режимы\n"),
         ("import 'package:hiddify/features/log/model/log_level.dart';\n",
          "import 'package:hiddify/features/connections/myvpn_connections.dart';\nimport 'package:hiddify/features/log/model/log_level.dart';\n"),
@@ -1083,6 +1122,18 @@ def modes(s):
         s = s.replace(a, b)
     return s
 edit("lib/features/settings/data/config_option_repository.dart", modes)
+
+# 34. Маршрутизация: импорт правил из других приложений, наборы, источники списков
+def routing_extras(s):
+    for a, b in [
+        ("            const _PinnedOptions(),\n", "            const _PinnedOptions(),\n            const MyRoutingExtras(), // MyVPN\n"),
+        ("import 'package:hiddify/features/route_rules/notifier/rules_notifier.dart';\n",
+         "import 'package:hiddify/features/route_rules/myvpn_routing_extras.dart';\nimport 'package:hiddify/features/route_rules/notifier/rules_notifier.dart';\n"),
+    ]:
+        assert s.count(a) == 1, a.strip()[:40]
+        s = s.replace(a, b)
+    return s
+edit("lib/features/settings/overview/sections/routing_options_page.dart", routing_extras)
 
 # 8. Экран запуска: туннель на тёмном фоне
 import zlib, struct

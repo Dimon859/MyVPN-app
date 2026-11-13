@@ -58,6 +58,7 @@ Future<void> myMarkBad(WidgetRef ref, MyServer server, String reason) async {
   if (MyMarks.bad[server.key] == reason) return;
   MyMarks.bad[server.key] = reason;
   myEvent('$reason: ${server.name}');
+  myReconnectReason('сервер исключён детектором');
   await myApplyMarks(ref);
   final active = await ref.read(activeProfileProvider.future);
   if (active != null) await myConnectTo(ref, active, reload: true);

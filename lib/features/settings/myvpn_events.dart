@@ -54,6 +54,55 @@ abstract final class MyEvents {
 /// Не ждать запись события.
 void myEvent(String text) => unawaited(MyEvents.add(text));
 
+String? _myReason;
+DateTime? _myReasonAt;
+DateTime? _myOffAt;
+Timer? _myOffTimer;
+
+/// Почему сейчас будет переподключение (сменился DNS, режим, протоколы…).
+void myReconnectReason(String reason) {
+  _myReason = reason;
+  _myReasonAt = DateTime.now();
+}
+
+/// VPN выключился или включился. Быстрое «выключился → включился» пишется одной строкой «Переподключение».
+void myVpnState(bool running) {
+  if (!running) {
+    _myOffAt = DateTime.now();
+    _myOffTimer?.cancel();
+    _myOffTimer = Timer(const Duration(seconds: 20), () => myEvent('VPN выключен'));
+    return;
+  }
+  final quick = _myOffAt != null && DateTime.now().difference(_myOffAt!) < const Duration(seconds: 20);
+  _myOffTimer?.cancel();
+  _myOffAt = null;
+  if (quick) {
+    final reason = _myReasonAt != null && DateTime.now().difference(_myReasonAt!) < const Duration(minutes: 1) ? _myReason : null;
+    myEvent('🔄 Переподключение${reason == null ? '' : ' ($reason)'}');
+  } else {
+    myEvent('VPN включён');
+  }
+  _myReason = null;
+}
+
+String? _myPendingServer;
+DateTime? _myPendingAt;
+String? _myLoggedServer;
+
+/// Текущий сервер: в журнал попадает, только если продержался 30 секунд.
+void myServerSeen(String? name) {
+  if (name == null) return;
+  if (name != _myPendingServer) {
+    _myPendingServer = name;
+    _myPendingAt = DateTime.now();
+    return;
+  }
+  if (name != _myLoggedServer && DateTime.now().difference(_myPendingAt!) >= const Duration(seconds: 30)) {
+    _myLoggedServer = name;
+    myEvent('Сервер: $name');
+  }
+}
+
 String _two(int v) => v.toString().padLeft(2, '0');
 
 String myEventTime(DateTime t) {

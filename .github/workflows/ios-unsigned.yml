@@ -17,7 +17,7 @@ on:
         default: 'Tunnex'
       app_version:
         description: 'Версия приложения (например 1.0.0)'
-        default: '1.6.0'
+        default: '1.7.0'
 
 jobs:
   ios:

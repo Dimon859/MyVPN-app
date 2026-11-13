@@ -38,6 +38,8 @@ String myNameXrayJson(String text) {
   var changed = false;
   final names = <String, String>{}; // сервер (без тега) → имя
   final used = <String>{};
+  final groups = <String, List<String>>{}; // группа подписки → имена серверов в ней
+  List? rules;
   for (final c in configs) {
     if (c is! Map) continue;
     final remarks = (c['remarks'] ?? '').toString().trim();
@@ -47,6 +49,22 @@ String myNameXrayJson(String text) {
       for (final o in outs)
         if (o is Map && o['type'] == null && _myProxyProtocols.contains(o['protocol'])) o,
     ];
+    // серверы, которые подписка сама выбирает автоматически (балансировщики); нет их — все серверы конфига
+    final routing = c['routing'];
+    final selectors = <String>[
+      if (routing is Map)
+        for (final b in (routing['balancers'] as List? ?? const []))
+          if (b is Map)
+            for (final sel in (b['selector'] as List? ?? const [])) sel.toString(),
+    ];
+    if (rules == null && routing is Map && routing['rules'] is List) rules = routing['rules'] as List;
+    bool inGroup(Map o) {
+      if (selectors.isEmpty) return true;
+      // как в Xray: выбор по началу тега
+      final tag = (o['tag'] ?? '').toString();
+      return selectors.any(tag.startsWith);
+    }
+    final members = <Map>[for (final o in proxies) if (inGroup(o)) o];
     for (var i = 0; i < proxies.length; i++) {
       final o = proxies[i];
       final key = jsonEncode(Map.of(o)..remove('tag'));
@@ -67,8 +85,25 @@ String myNameXrayJson(String text) {
       o['tag'] = name;
       changed = true;
     }
+    final memberNames = [for (final o in members) o['tag'].toString()];
+    if (memberNames.isNotEmpty) groups[remarks] = memberNames;
+  }
+  // группы и правила подписки — заберёт приложение, когда профиль запишется
+  if (changed && (groups.length > 1 || (rules?.isNotEmpty ?? false))) {
+    MyXrayMeta.pending.add(MyXrayMeta(groups, rules ?? const []));
+    if (MyXrayMeta.pending.length > 8) MyXrayMeta.pending.removeAt(0);
   }
   return changed ? jsonEncode(data) : text;
+}
+
+/// Группы и правила подписки в формате Xray JSON (до записи профиля).
+class MyXrayMeta {
+  MyXrayMeta(this.groups, this.rules);
+
+  final Map<String, List<String>> groups;
+  final List rules;
+
+  static final pending = <MyXrayMeta>[];
 }
 
 /// Имя сервера без служебной нумерации ядра («имя § 3») — так, как его показывает приложение.

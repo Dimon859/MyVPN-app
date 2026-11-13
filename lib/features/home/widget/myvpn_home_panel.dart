@@ -243,10 +243,13 @@ class MyHomePanel extends HookConsumerWidget {
     }, [pendingUrl]);
 
     final currentTag = list == null ? null : myCurrentServerTag(list);
-    final prevTag = MySession.lastTag;
     MySession.onServer(currentTag);
-    if (currentTag != null && prevTag != null && prevTag != currentTag) {
-      myEvent('Сервер: ${myCleanName(currentTag)}');
+    if (currentTag != null) myServerSeen(myCleanName(currentTag));
+    // включение/выключение VPN — в журнал (быстрое выкл→вкл одной строкой)
+    final runningRef = useRef<bool?>(null);
+    if (runningRef.value != running) {
+      if (runningRef.value != null) myVpnState(running);
+      runningRef.value = running;
     }
 
     // сервер тормозит: пинг сильно выше обычного для этого сервера

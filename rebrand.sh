@@ -1193,8 +1193,15 @@ edit("lib/core/router/adaptive_layout/my_adaptive_layout.dart", tab_nav)
 def tab_page(s):
     for a, b in [
         ("        title: Text(t.pages.profiles.title),\n", "        title: const Text('Серверы'), // MyVPN\n"),
+        # MyVPN: «Добавить» — плюсом вверху, а не большой кнопкой внизу
+        ("      floatingActionButton: FloatingActionButton.extended(\n        onPressed: () async => await ref.read(bottomSheetsNotifierProvider.notifier).showAddProfile(),\n        label: Text(t.pages.profiles.add),\n        icon: const Icon(Icons.add_rounded),\n      ),\n", ""),
+        ("        actions: [\n          IconButton(\n            onPressed: () => ref.read(foregroundProfilesUpdateNotifierProvider.notifier).trigger(),\n",
+         "        actions: [\n          IconButton(\n            onPressed: () async => await ref.read(bottomSheetsNotifierProvider.notifier).showAddProfile(),\n"
+         "            icon: const Icon(Icons.add_rounded),\n            tooltip: t.pages.profiles.add,\n          ),\n"
+         "          IconButton(\n            onPressed: () => ref.read(foregroundProfilesUpdateNotifierProvider.notifier).trigger(),\n"),
         ("          itemBuilder: (context, index) => ProfileTile(key: ValueKey(data[index].id), profile: data[index]),\n",
          "          itemBuilder: (context, index) => MyTabProfile(key: ValueKey(data[index].id), profile: data[index]),\n"),
+        ("          padding: const EdgeInsets.all(12).copyWith(bottom: 84),\n", "          padding: const EdgeInsets.all(12).copyWith(bottom: 24),\n"),
         ("import 'package:flutter/material.dart';\n",
          "import 'package:flutter/material.dart';\nimport 'package:hiddify/features/profile/widget/myvpn_profile_extras.dart';\n"),
     ]:

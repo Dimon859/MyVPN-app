@@ -717,6 +717,12 @@ def tile_edit(s):
          "this.margin = EdgeInsets.zero, this.myTrailing});\n\n  final ProfileEntity profile;\n  final Widget? myTrailing; // MyVPN\n"),
         ("              Expanded(child: _body(context, t, theme, subInfo, showActionButton, handleTap, showLinks)),\n",
          "              Expanded(child: _body(context, t, theme, subInfo, showActionButton, handleTap, showLinks)),\n              ?myTrailing,\n"),
+        # MyVPN: во вкладке «Серверы» выбор подписки не уводит с вкладки (pop там закрывал саму вкладку)
+        ("        if (context.mounted && context.canPop()) context.pop();\n",
+         "        if (context.mounted && myTrailing == null && context.canPop()) context.pop();\n"),
+        ("      if (context.canPop()) {\n        context.pop();\n      } else if (!Breakpoint(context).isMobile()) {\n        context.goNamed('home');\n      }\n",
+         "      if (myTrailing != null) return; // MyVPN: остаёмся во вкладке «Серверы»\n"
+         "      if (context.canPop()) {\n        context.pop();\n      } else if (!Breakpoint(context).isMobile()) {\n        context.goNamed('home');\n      }\n"),
     ]:
         assert s.count(a) == 1, a.strip()[:50]
         s = s.replace(a, b)

@@ -307,55 +307,63 @@ Future<String?> myConnectTo(WidgetRef ref, ProfileEntity profile, {String? serve
   }
 }
 
-/// Серверы и группы подписки на весь экран (из вкладки «Серверы»).
-Future<void> showMyServersPage(BuildContext context, ProfileEntity profile) => Navigator.of(context, rootNavigator: true)
-    .push(MaterialPageRoute<void>(builder: (_) => _MyServersDialog(profile: profile, fullScreen: true)));
-
-/// Подписка во вкладке «Серверы»: карточка (нажатие — выбрать, ⋯ — все действия) и кнопки под ней.
-class MyTabProfile extends ConsumerWidget {
+/// Подписка во вкладке «Серверы»: карточка (нажатие — выбрать, ⋯ — действия),
+/// под ней стрелка — раскрывает группы и серверы прямо здесь.
+class MyTabProfile extends HookConsumerWidget {
   const MyTabProfile({super.key, required this.profile});
 
   final ProfileEntity profile;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final open = useState(false);
     final active = ref.watch(activeProfileProvider).valueOrNull?.id == profile.id;
     final section = MyMarks.sections[profile.id];
+    final hasGroups = MyMarks.subGroups[profile.id]?.isNotEmpty ?? false;
+    final label = [
+      if (hasGroups) 'Группы и серверы' else 'Серверы',
+      if (active && section != null) '📂 $section',
+    ].join(' · ');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
         ProfileTile(profile: profile),
-        Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: Wrap(
-            spacing: 6,
-            runSpacing: 4,
-            children: [
-              FilledButton.tonalIcon(
-                style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
-                icon: const Icon(Icons.dns_rounded, size: 18),
-                label: Text(MyMarks.subGroups[profile.id] != null ? 'Группы и серверы' : 'Серверы'),
-                onPressed: () => showMyServersPage(context, profile),
-              ),
-              if (!active || !ref.watch(serviceRunningProvider))
-                OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
-                  icon: const Icon(Icons.play_arrow_rounded, size: 18),
-                  label: const Text('Подключить'),
-                  onPressed: () async {
-                    final err = await myConnectTo(ref, profile);
-                    if (context.mounted) mySnack(context, err ?? 'Подключено: ${profile.name}');
-                  },
+        InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => open.value = !open.value,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.primary, fontWeight: FontWeight.w600),
+                  ),
                 ),
-              if (active && section != null)
-                Chip(
-                  visualDensity: VisualDensity.compact,
-                  avatar: const Icon(Icons.folder_open_rounded, size: 16),
-                  label: Text(section, overflow: TextOverflow.ellipsis),
+                AnimatedRotation(
+                  turns: open.value ? 0.5 : 0,
+                  duration: const Duration(milliseconds: 200),
+                  child: Icon(Icons.expand_more_rounded, color: theme.colorScheme.primary),
                 ),
-            ],
+              ],
+            ),
           ),
+        ),
+        AnimatedSize(
+          duration: const Duration(milliseconds: 200),
+          alignment: Alignment.topCenter,
+          child: open.value
+              ? Card(
+                  margin: const EdgeInsets.only(bottom: 4),
+                  clipBehavior: Clip.antiAlias,
+                  child: _MyServersDialog(profile: profile, inline: true),
+                )
+              : const SizedBox(width: double.infinity),
         ),
       ],
     );
@@ -372,10 +380,10 @@ Future<void> showMyServers(BuildContext context, WidgetRef ref, ProfileEntity pr
 }
 
 class _MyServersDialog extends HookConsumerWidget {
-  const _MyServersDialog({required this.profile, this.fullScreen = false});
+  const _MyServersDialog({required this.profile, this.inline = false});
 
   final ProfileEntity profile;
-  final bool fullScreen;
+  final bool inline; // прямо в карточке подписки во вкладке «Серверы»
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -392,6 +400,7 @@ class _MyServersDialog extends HookConsumerWidget {
     final busy = useState(false);
 
     if (servers == null) {
+      if (inline) return const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator()));
       return const AlertDialog(content: SizedBox(height: 80, child: Center(child: CircularProgressIndicator())));
     }
     final types = {for (final s in servers) s.type}.toList()..sort();
@@ -541,9 +550,28 @@ class _MyServersDialog extends HookConsumerWidget {
       onPressed: onTap,
     );
 
+    Widget list(Widget child) => inline ? child : Expanded(child: child);
+
     final content = Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
           children: [
+            if (inline)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${myServersWord(visibleCount)} в автовыборе · ${myUpdatedText(profile.lastUpdate)}',
+                      style: smallStyle,
+                    ),
+                    if (section != null) Text('📂 подключено к: $section', style: smallStyle),
+                    if (hasSubRules) Text('📜 правила подписки: ${subRulesOn ? 'включены' : 'выключены'}', style: smallStyle),
+                  ],
+                ),
+              )
+            else
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 18, 8, 4),
               child: Row(
@@ -610,10 +638,13 @@ class _MyServersDialog extends HookConsumerWidget {
                 ],
               ),
             ),
-            Expanded(
-              child: shown.isEmpty
-                  ? const Center(child: Text('Ничего не найдено'))
+            list(
+              shown.isEmpty
+                  ? const Padding(padding: EdgeInsets.all(16), child: Center(child: Text('Ничего не найдено')))
                   : ListView.builder(
+                      shrinkWrap: inline,
+                      physics: inline ? const NeverScrollableScrollPhysics() : null,
+                      padding: inline ? EdgeInsets.zero : null,
                       itemCount: groups.length,
                       itemBuilder: (context, i) {
                         final g = groups[i];
@@ -696,7 +727,7 @@ class _MyServersDialog extends HookConsumerWidget {
             ),
           ],
         );
-    if (fullScreen) return Scaffold(body: SafeArea(child: content));
+    if (inline) return content;
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 36),
       clipBehavior: Clip.antiAlias,

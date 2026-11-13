@@ -673,7 +673,7 @@ def mine_iface(s):
                      "  /// MyVPN: применить отметки «избранное» и «исключить»\n  Future<void> myMarksChanged();\n")
 edit("lib/features/profile/data/profile_repository.dart", lambda s: mine_iface(all_profile(s)))
 
-# 20. Профили: справа число серверов и время обновления, пункт меню «Серверы» (без подключения)
+# 20. Профили: справа число серверов и время обновления; серверы — стрелкой во вкладке «Серверы»
 assert os.path.exists("lib/features/profile/widget/myvpn_profile_extras.dart"), "нет myvpn_profile_extras.dart"
 def tile(s):
     for a, b in [
@@ -688,8 +688,6 @@ def tile(s):
         ("\n    );\n\n    final Widget? trailing = isMain",
          "\n    ),\n    );\n\n    final Widget? trailing = isMain"),
         ("      if (profile case RemoteProfileEntity())\n        AdaptiveMenuItem(\n          title: t.common.update,",
-         "      AdaptiveMenuItem(\n        title: 'Серверы',\n        leadingIcon: const Icon(Icons.dns_rounded),\n"
-         "        onTap: () => showMyServers(context, ref, profile),\n      ),\n"
          "      AdaptiveMenuItem(\n        title: 'Трафик и лимит',\n        leadingIcon: const Icon(Icons.data_usage_rounded),\n"
          "        onTap: () => showMyCounter(context, profile.name),\n      ),\n"
          "      if (profile case RemoteProfileEntity())\n        AdaptiveMenuItem(\n          title: 'HWID для этой подписки',\n"

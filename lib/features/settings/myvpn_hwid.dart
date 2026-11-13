@@ -197,3 +197,137 @@ Future<void> showMySubHwid(BuildContext context, ProfileEntity profile) async {
     ),
   );
 }
+
+const _myHwidModes = {
+  'global': 'Как в общих настройках',
+  'device': 'Отправлять HWID устройства',
+  'hide': 'Не отправлять (скрыть)',
+  'custom': 'Свой HWID для этой подписки',
+};
+
+/// HWID для следующей добавляемой подписки — выбирается в окне «Добавить профиль»,
+/// записывается к подписке до первой загрузки, чтобы она сразу получила нужный HWID.
+abstract final class MyHwidNext {
+  static final mode = ValueNotifier<String>('global');
+  static String custom = '';
+
+  static Future<void> apply(String url) async {
+    final m = mode.value;
+    final v = custom;
+    mode.value = 'global';
+    if (m == 'global') return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final by = await _myBySub(prefs);
+      by[DioHttpClient.myHwidKey(url)] = switch (m) {
+        'device' => 'device',
+        'hide' => '',
+        _ => v,
+      };
+      await prefs.setString('myvpn_hwid_by_sub', jsonEncode(by));
+    } catch (_) {}
+  }
+}
+
+/// Строка в окне «Добавить профиль»: какой HWID отправить новой подписке.
+class MyHwidNextRow extends StatelessWidget {
+  const MyHwidNextRow({super.key});
+
+  Future<void> _pick(BuildContext context) async {
+    var mode = MyHwidNext.mode.value;
+    final ctrl = TextEditingController(text: MyHwidNext.custom.isNotEmpty ? MyHwidNext.custom : _myNewId());
+    await showDialog<void>(
+      context: context,
+      useRootNavigator: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('HWID для новой подписки'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final e in _myHwidModes.entries)
+                  ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(mode == e.key ? Icons.radio_button_checked_rounded : Icons.radio_button_unchecked_rounded),
+                    title: Text(e.value),
+                    onTap: () => setState(() => mode = e.key),
+                  ),
+                if (mode == 'custom')
+                  TextField(
+                    controller: ctrl,
+                    style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                    decoration: InputDecoration(
+                      border: const OutlineInputBorder(),
+                      isDense: true,
+                      labelText: 'HWID',
+                      suffixIcon: IconButton(
+                        tooltip: 'Новый случайный',
+                        icon: const Icon(Icons.casino_outlined),
+                        onPressed: () => setState(() => ctrl.text = _myNewId()),
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 6),
+                Text(
+                  'Применится к подписке, которую добавите сейчас (из буфера, QR или вручную). '
+                  'Потом можно поменять: ⋯ → «HWID для этой подписки».',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Отмена')),
+            FilledButton(
+              onPressed: () {
+                final v = ctrl.text.trim();
+                if (mode == 'custom' && !_myValid(v)) {
+                  _mySay(context, 'HWID: только латиница, цифры и - _ . : =, от 4 символов');
+                  return;
+                }
+                MyHwidNext.custom = v;
+                MyHwidNext.mode.value = mode;
+                Navigator.of(context).pop();
+              },
+              child: const Text('Готово'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ValueListenableBuilder<String>(
+      valueListenable: MyHwidNext.mode,
+      builder: (context, mode, _) => InkWell(
+        onTap: () => _pick(context),
+        child: SizedBox(
+          height: 48,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                Icon(Icons.badge_outlined, size: 20, color: theme.colorScheme.onSurfaceVariant),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'HWID: ${mode == 'custom' ? MyHwidNext.custom : _myHwidModes[mode]!.toLowerCase()}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                ),
+                Icon(Icons.expand_more_rounded, color: theme.colorScheme.primary),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

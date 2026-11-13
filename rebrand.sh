@@ -184,11 +184,13 @@ def interval_text(s):
     return s.rstrip("\n") + RU_MIN
 edit("lib/features/settings/overview/sections/general_page.dart", interval_text)
 
-# 12. Окно «Добавить профиль»: убрать «Бесплатно» и «Справка» (нижняя строка)
+# 12. Окно «Добавить профиль»: вместо «Бесплатно» и «Справка» — выбор HWID для новой подписки
 def addprofile(s):
     for a, b in [
-        ("              const NavBar(),\n", "              const Gap(24),\n"),
-        ("AddProfileModalConst.navBarHeight + 32;", "24 + 32;"),
+        ("              const NavBar(),\n", "              const MyHwidNextRow(),\n              const Gap(12),\n"),
+        ("AddProfileModalConst.navBarHeight + 32;", "60 + 32;"),
+        ("import 'package:hiddify/features/profile/notifier/profile_notifier.dart';\n",
+         "import 'package:hiddify/features/profile/notifier/profile_notifier.dart';\nimport 'package:hiddify/features/settings/myvpn_hwid.dart';\n"),
     ]:
         assert s.count(a) == 1, a.strip()
         s = s.replace(a, b)
@@ -993,9 +995,11 @@ edit("lib/features/profile/data/profile_parser.dart", tg_parse)
 def add_summary(s):
     for a, b in [
         ("import 'package:hiddify/features/connection/notifier/connection_notifier.dart';\n",
-         "import 'package:hiddify/features/connection/notifier/connection_notifier.dart';\nimport 'package:hiddify/features/home/widget/myvpn_home_panel.dart';\n"),
+         "import 'package:hiddify/features/connection/notifier/connection_notifier.dart';\nimport 'package:hiddify/features/home/widget/myvpn_home_panel.dart';\nimport 'package:hiddify/features/settings/myvpn_hwid.dart';\n"),
         ("          cancelToken: _cancelToken = CancelToken(),\n        );\n      } else {",
-         "          cancelToken: _cancelToken = CancelToken(),\n        );\n        MyAddSummary.prepare(rs.url); // MyVPN\n      } else {"),
+         "          cancelToken: _cancelToken = CancelToken(),\n        );\n        MyAddSummary.prepare(rs.url); // MyVPN\n        await MyHwidNext.apply(rs.url); // MyVPN: HWID новой подписки\n      } else {"),
+        ("      final task = _profilesRepo.upsertRemote(url, userOverride: userOverride);\n",
+         "      await MyHwidNext.apply(url); // MyVPN: HWID новой подписки\n      final task = _profilesRepo.upsertRemote(url, userOverride: userOverride);\n"),
         ('              loggy.info("successfully added profile");\n',
          '              loggy.info("successfully added profile");\n              MyAddSummary.commit(); // MyVPN\n'),
     ]:

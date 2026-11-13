@@ -703,7 +703,12 @@ def tile(s):
         assert s.count(a) == 1, a.strip()[:50]
         s = s.replace(a, b)
     return s
-edit("lib/features/profile/widget/profile_tile.dart", tile)
+def tile_edit(s):
+    # MyVPN: подписки во вкладке, а не в выдвижном окне — закрывать нечего, иначе «Изменить» не открывается
+    a = "          if (Breakpoint(context).isMobile()) context.pop();\n          context.goNamed('profileDetails'"
+    assert s.count(a) == 1, "edit pop"
+    return s.replace(a, "          if (Breakpoint(context).isMobile() && context.canPop()) context.pop();\n          context.goNamed('profileDetails'")
+edit("lib/features/profile/widget/profile_tile.dart", lambda s: tile_edit(tile(s)))
 
 # 21. HWID устройства при загрузке подписок (x-hwid и др.), как у Happ / v2RayTun / Incy.
 #     Платные панели (Remnawave и др.) без него отдают пустую подписку или заглушку.

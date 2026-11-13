@@ -1147,6 +1147,19 @@ def proxy_titles(s):
         s = s.replace(a, b)
     return s
 edit("lib/features/proxy/widget/proxy_tile.dart", proxy_titles)
+def card_group_title(s):
+    for a, b in [
+        ("                  Text(group, style: theme.textTheme.labelMedium?.copyWith(color: s.primary, letterSpacing: .3)),\n",
+         "                  Flexible(\n                    child: Text(\n                      myGroupTitle(group, group).replaceFirst(RegExp(r'^[⚡⚖️]+\\s*'), ''), // MyVPN\n"
+         "                      maxLines: 1,\n                      overflow: TextOverflow.ellipsis,\n"
+         "                      style: theme.textTheme.labelMedium?.copyWith(color: s.primary, letterSpacing: .3),\n                    ),\n                  ),\n"),
+        ("import 'package:flutter/material.dart';\n",
+         "import 'package:flutter/material.dart';\nimport 'package:hiddify/features/profile/data/myvpn_marks.dart';\n"),
+    ]:
+        assert s.count(a) == 1, a.strip()[:40]
+        s = s.replace(a, b)
+    return s
+edit("lib/features/proxy/active/active_proxy_card.dart", card_group_title)
 
 # 8. Экран запуска: туннель на тёмном фоне
 import zlib, struct

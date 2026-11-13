@@ -6,7 +6,6 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:hiddify/utils/number_formatters.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class MyCounter {
@@ -26,6 +25,13 @@ class MyCounter {
     since: DateTime.fromMillisecondsSinceEpoch((m['s'] as num?)?.toInt() ?? 0),
     limitGb: (m['l'] as num?)?.toDouble() ?? 0,
   );
+}
+
+String _mySize(num b) {
+  if (b < 1024) return '${b.toInt()} Б';
+  if (b < 1024 * 1024) return '${(b / 1024).toStringAsFixed(0)} КБ';
+  if (b < 1024 * 1024 * 1024) return '${(b / 1024 / 1024).toStringAsFixed(1)} МБ';
+  return '${(b / 1024 / 1024 / 1024).toStringAsFixed(2)} ГБ';
 }
 
 abstract final class MyCounters {
@@ -128,7 +134,7 @@ class MyCounterLine extends StatelessWidget {
         final c = MyCounters.of(name);
         if (c == null || (c.total == 0 && c.limitGb == 0)) return const SizedBox.shrink();
         final style = theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant);
-        final text = '${hasProviderBar ? 'С этого телефона' : 'Потрачено'}: ${c.total.size()}'
+        final text = '${hasProviderBar ? 'С этого телефона' : 'Потрачено'}: ${_mySize(c.total)}'
             '${c.limitGb > 0 ? ' из ${c.limitGb.toStringAsFixed(c.limitGb % 1 == 0 ? 0 : 1)} ГБ' : ''}'
             ' · с ${_two(c.since.day)}.${_two(c.since.month)}';
         final ratio = c.limitGb > 0 ? (c.total / (c.limitGb * 1024 * 1024 * 1024)).clamp(0.0, 1.0) : null;
@@ -177,7 +183,7 @@ Future<void> showMyCounter(BuildContext context, String name) async {
           Text(
             c == null
                 ? 'Пока ничего не потрачено.'
-                : 'Потрачено: ${c.total.size()} (↓ ${c.down.size()} ↑ ${c.up.size()})\n'
+                : 'Потрачено: ${_mySize(c.total)} (↓ ${_mySize(c.down)} ↑ ${_mySize(c.up)})\n'
                       'Считается с ${_two(c.since.day)}.${_two(c.since.month)}.${c.since.year}',
           ),
           const SizedBox(height: 12),

@@ -1155,6 +1155,8 @@ def card_group_title(s):
          "                      style: theme.textTheme.labelMedium?.copyWith(color: s.primary, letterSpacing: .3),\n                    ),\n                  ),\n"),
         ("import 'package:flutter/material.dart';\n",
          "import 'package:flutter/material.dart';\nimport 'package:hiddify/features/profile/data/myvpn_marks.dart';\n"),
+        # MyVPN: круглая кнопка замера скорости у сервера убрана — замер есть на главном (⚡), он точнее
+        ("      end: connected\n          ? UploadSpeedChip(\n", "      end: false\n          ? UploadSpeedChip(\n"),
     ]:
         assert s.count(a) == 1, a.strip()[:40]
         s = s.replace(a, b)

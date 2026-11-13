@@ -876,8 +876,8 @@ def more_tiles(s):
          "import 'package:hiddify/core/http_client/dio_http_client.dart';\n"
          "import 'package:hiddify/features/settings/myvpn_backup.dart';\n"
          "import 'package:hiddify/features/stats/myvpn_traffic.dart';\n"),
-        ("                  const SnackBar(content: Text('HWID скопирован'), duration: Duration(seconds: 2)),\n                );\n              },\n            ),\n          ),\n",
-         "                  const SnackBar(content: Text('HWID скопирован'), duration: Duration(seconds: 2)),\n                );\n              },\n            ),\n          ),\n" + MORE_TILES),
+        ("              onTap: () => showMyHwidDialog(context),\n            ),\n          ),\n",
+         "              onTap: () => showMyHwidDialog(context),\n            ),\n          ),\n" + MORE_TILES),
     ]:
         assert s.count(a) == 1, a.strip()[:50]
         s = s.replace(a, b)

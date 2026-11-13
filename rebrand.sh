@@ -707,7 +707,17 @@ def tile_edit(s):
     # MyVPN: подписки во вкладке, а не в выдвижном окне — закрывать нечего, иначе «Изменить» не открывается
     a = "          if (Breakpoint(context).isMobile()) context.pop();\n          context.goNamed('profileDetails'"
     assert s.count(a) == 1, "edit pop"
-    return s.replace(a, "          if (Breakpoint(context).isMobile() && context.canPop()) context.pop();\n          context.goNamed('profileDetails'")
+    s = s.replace(a, "          if (Breakpoint(context).isMobile() && context.canPop()) context.pop();\n          context.goNamed('profileDetails'")
+    # MyVPN: место справа внутри карточки (стрелка раскрытия во вкладке «Серверы»)
+    for a, b in [
+        ("this.margin = EdgeInsets.zero});\n\n  final ProfileEntity profile;\n",
+         "this.margin = EdgeInsets.zero, this.myTrailing});\n\n  final ProfileEntity profile;\n  final Widget? myTrailing; // MyVPN\n"),
+        ("              Expanded(child: _body(context, t, theme, subInfo, showActionButton, handleTap, showLinks)),\n",
+         "              Expanded(child: _body(context, t, theme, subInfo, showActionButton, handleTap, showLinks)),\n              ?myTrailing,\n"),
+    ]:
+        assert s.count(a) == 1, a.strip()[:50]
+        s = s.replace(a, b)
+    return s
 edit("lib/features/profile/widget/profile_tile.dart", lambda s: tile_edit(tile(s)))
 
 # 21. HWID устройства при загрузке подписок (x-hwid и др.), как у Happ / v2RayTun / Incy.

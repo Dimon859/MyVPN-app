@@ -308,7 +308,7 @@ Future<String?> myConnectTo(WidgetRef ref, ProfileEntity profile, {String? serve
 }
 
 /// Подписка во вкладке «Серверы»: карточка (нажатие — выбрать, ⋯ — действия),
-/// под ней стрелка — раскрывает группы и серверы прямо здесь.
+/// стрелка справа в карточке — раскрывает группы и серверы прямо здесь.
 class MyTabProfile extends HookConsumerWidget {
   const MyTabProfile({super.key, required this.profile});
 
@@ -318,39 +318,28 @@ class MyTabProfile extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final open = useState(false);
-    final active = ref.watch(activeProfileProvider).valueOrNull?.id == profile.id;
-    final section = MyMarks.sections[profile.id];
     final hasGroups = MyMarks.subGroups[profile.id]?.isNotEmpty ?? false;
-    final label = [
-      if (hasGroups) 'Группы и серверы' else 'Серверы',
-      if (active && section != null) '📂 $section',
-    ].join(' · ');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
-        ProfileTile(profile: profile),
-        InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: () => open.value = !open.value,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.primary, fontWeight: FontWeight.w600),
+        ProfileTile(
+          profile: profile,
+          myTrailing: Tooltip(
+            message: hasGroups ? 'Группы и серверы' : 'Серверы',
+            child: InkWell(
+              borderRadius: const BorderRadiusDirectional.horizontal(end: Radius.circular(16)).resolve(Directionality.of(context)),
+              onTap: () => open.value = !open.value,
+              child: SizedBox(
+                width: 44,
+                child: Center(
+                  child: AnimatedRotation(
+                    turns: open.value ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 200),
+                    child: Icon(Icons.expand_more_rounded, size: 28, color: theme.colorScheme.primary),
                   ),
                 ),
-                AnimatedRotation(
-                  turns: open.value ? 0.5 : 0,
-                  duration: const Duration(milliseconds: 200),
-                  child: Icon(Icons.expand_more_rounded, color: theme.colorScheme.primary),
-                ),
-              ],
+              ),
             ),
           ),
         ),

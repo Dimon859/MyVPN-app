@@ -117,44 +117,60 @@ Future<void> showMyImport(BuildContext context, WidgetRef ref) async {
       title: const Text('Импорт правил'),
       content: SizedBox(
         width: double.maxFinite,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Вставьте ссылку (например happ://routing/…), JSON правил, конфиг Shadowrocket или Clash, '
-              'или просто список сайтов и IP — по одному на строку.',
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: ctrl,
-              minLines: 4,
-              maxLines: 8,
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-              decoration: const InputDecoration(border: OutlineInputBorder(), hintText: 'Вставьте сюда'),
-            ),
-          ],
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Вставьте ссылку (например happ://routing/…), JSON правил, конфиг Shadowrocket или Clash, '
+                'или просто список сайтов и IP — по одному на строку.',
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: ctrl,
+                minLines: 4,
+                maxLines: 6,
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                decoration: const InputDecoration(border: OutlineInputBorder(), hintText: 'Вставьте сюда'),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.content_paste_rounded, size: 18),
+                      label: const Text('Из буфера'),
+                      onPressed: () async {
+                        final data = await Clipboard.getData(Clipboard.kTextPlain);
+                        ctrl.text = data?.text ?? '';
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.folder_open_rounded, size: 18),
+                      label: const Text('Из файла'),
+                      onPressed: () async {
+                        try {
+                          final res = await FilePicker.platform.pickFiles();
+                          final path = res?.files.single.path;
+                          if (path != null) ctrl.text = await File(path).readAsString();
+                        } catch (_) {
+                          if (context.mounted) _mySay(context, 'Не удалось прочитать файл');
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
       actions: [
-        TextButton(
-          onPressed: () async {
-            final data = await Clipboard.getData(Clipboard.kTextPlain);
-            ctrl.text = data?.text ?? '';
-          },
-          child: const Text('Из буфера'),
-        ),
-        TextButton(
-          onPressed: () async {
-            try {
-              final res = await FilePicker.platform.pickFiles();
-              final path = res?.files.single.path;
-              if (path != null) ctrl.text = await File(path).readAsString();
-            } catch (_) {
-              if (context.mounted) _mySay(context, 'Не удалось прочитать файл');
-            }
-          },
-          child: const Text('Из файла'),
-        ),
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Отмена')),
         FilledButton(onPressed: () => Navigator.of(context).pop(ctrl.text), child: const Text('Разобрать')),
       ],
     ),

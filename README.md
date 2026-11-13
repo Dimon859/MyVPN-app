@@ -4,3 +4,4 @@
 
 - block/, country/ — из hiddify/hiddify-geo
 - sagernet/ — из SagerNet/sing-geosite
+- geosite/, geoip/ — из runetfreedom/russia-v2ray-rules-dat (списки по сервисам и странам)

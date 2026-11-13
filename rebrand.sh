@@ -1256,6 +1256,29 @@ png("ios/Runner/Assets.xcassets/LaunchBackground.imageset/background.png", 1, 1,
 
 print("✅ экран запуска")
 
+# 37. «Изменить» подписку: конфиг (JSON) — по кнопке, а не сразу (со 150 серверами подвисало)
+def details_lazy(s):
+    for a, b in [
+        ("    final formKey = useMemoized(() => GlobalKey<FormState>());\n",
+         "    final formKey = useMemoized(() => GlobalKey<FormState>());\n    final myShowConfig = useState(false); // MyVPN\n"),
+        ("                      child: switch (data.config) {\n                        AsyncData(value: final config) =>",
+         "                      child: !myShowConfig.value\n"
+         "                          ? Center(\n"
+         "                              child: OutlinedButton.icon(\n"
+         "                                onPressed: () => myShowConfig.value = true,\n"
+         "                                icon: const Icon(Icons.data_object_rounded),\n"
+         "                                label: const Text('Открыть конфиг (JSON)'),\n"
+         "                              ),\n"
+         "                            )\n"
+         "                          : switch (data.config) {\n                        AsyncData(value: final config) =>"),
+        ('                                  expandedObjects: const ["outbounds", "endpoints"],\n',
+         '                                  expandedObjects: const [],\n'),
+    ]:
+        assert s.count(a) == 1, "details: " + a.strip()[:50]
+        s = s.replace(a, b)
+    return s
+edit("lib/features/profile/details/profile_details_page.dart", details_lazy)
+
 # Проверка: в текстах интерфейса не осталось «Hiddify»
 left = [f for f in glob.glob("assets/translations/*.i18n.json") if "Hiddify" in open(f, encoding="utf-8").read()]
 assert not left, f"остался Hiddify: {left}"

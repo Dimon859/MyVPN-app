@@ -154,6 +154,21 @@ abstract final class MyWhitelist {
     } catch (_) {}
   }
 
+  /// Показывать на главном предупреждение «похоже на белые списки».
+  static Future<bool> banner() async {
+    try {
+      return (await SharedPreferences.getInstance()).getBool('myvpn_wl_banner') ?? true;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  static Future<void> setBanner(bool on) async {
+    try {
+      await (await SharedPreferences.getInstance()).setBool('myvpn_wl_banner', on);
+    } catch (_) {}
+  }
+
   /// Автопереключение на подписку для белых списков и обратно.
   static Future<bool> auto() async {
     try {
@@ -646,6 +661,7 @@ class MyToolsTiles extends HookConsumerWidget {
           subtitle: const Text('Её Tunnex предложит, когда заметит белые списки'),
           onTap: () => showMyWhitelistProfile(context, ref),
         ),
+        const _MyWlBannerTile(),
         const _MyWlAutoTile(),
         ListTile(
           leading: const Icon(Icons.network_check_rounded),
@@ -677,6 +693,26 @@ class _MyWlAutoTile extends HookWidget {
       onChanged: (v) async {
         await MyWhitelist.setAuto(v);
         if (!v) await MyWhitelist.setMainId(null);
+        tick.value++;
+      },
+    );
+  }
+}
+
+class _MyWlBannerTile extends HookWidget {
+  const _MyWlBannerTile();
+
+  @override
+  Widget build(BuildContext context) {
+    final tick = useState(0);
+    final on = useFuture(useMemoized(MyWhitelist.banner, [tick.value])).data ?? true;
+    return SwitchListTile(
+      secondary: const Icon(Icons.notifications_active_outlined),
+      title: const Text('Предупреждать о белых списках'),
+      subtitle: const Text('Баннер на главном «похоже на белые списки — переключиться?», когда VPN выключен'),
+      value: on,
+      onChanged: (v) async {
+        await MyWhitelist.setBanner(v);
         tick.value++;
       },
     );

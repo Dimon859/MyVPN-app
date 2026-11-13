@@ -220,6 +220,10 @@ class MyHomePanel extends HookConsumerWidget {
       }
       var cancelled = false;
       Future<void> check() async {
+        if (!await MyWhitelist.banner()) {
+          if (!cancelled) whitelist.value = null;
+          return;
+        }
         final r = await myDetectWhitelist();
         if (!cancelled) whitelist.value = r;
       }

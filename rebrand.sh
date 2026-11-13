@@ -710,6 +710,9 @@ def tile_edit(s):
     s = s.replace(a, "          if (Breakpoint(context).isMobile() && context.canPop()) context.pop();\n          context.goNamed('profileDetails'")
     # MyVPN: место справа внутри карточки (стрелка раскрытия во вкладке «Серверы»)
     for a, b in [
+        # выбрал подписку во вкладке «Серверы» — остаёмся там, а не на главный экран
+        ("      if (context.canPop()) {\n        context.pop();\n      } else {\n        context.goNamed('home');\n      }\n",
+         "      if (context.canPop()) {\n        context.pop();\n      } else if (!Breakpoint(context).isMobile()) {\n        context.goNamed('home');\n      }\n"),
         ("this.margin = EdgeInsets.zero});\n\n  final ProfileEntity profile;\n",
          "this.margin = EdgeInsets.zero, this.myTrailing});\n\n  final ProfileEntity profile;\n  final Widget? myTrailing; // MyVPN\n"),
         ("              Expanded(child: _body(context, t, theme, subInfo, showActionButton, handleTap, showLinks)),\n",

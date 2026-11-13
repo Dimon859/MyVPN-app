@@ -102,6 +102,8 @@ abstract final class MyMarks {
   static Map<String, List<Map<String, dynamic>>> subRules = {};
   /// Подписки, у которых свои правила выключены.
   static Set<String> subRulesOff = {};
+  /// Группа, к которой сейчас подключён автовыбор активного профиля (для подписи вместо «lowest»).
+  static String? activeSection;
   static Future<void>? _loading;
 
   static Future<void> load() => _loading ??= () async {
@@ -481,4 +483,12 @@ Future<void> myTakeSubMeta(String path, String text) async {
     await MyMarks.save();
     return;
   }
+}
+
+/// Название группы автовыбора для списка прокси: «lowest» → «⚡ Автовыбор» или «⚡ <группа>».
+String myGroupTitle(String tag, String fallback) {
+  final t = tag.replaceAll(RegExp(r'\s*§.*$'), '').trim();
+  if (t == 'lowest') return MyMarks.activeSection == null ? '⚡ Автовыбор' : '⚡ ${MyMarks.activeSection}';
+  if (t == 'balance') return '⚖️ Балансировка';
+  return fallback;
 }

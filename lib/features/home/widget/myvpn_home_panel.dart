@@ -166,6 +166,7 @@ class MyHomePanel extends HookConsumerWidget {
     final asn = asnRaw.isEmpty ? '' : (asnRaw.toUpperCase().startsWith('AS') ? asnRaw.toUpperCase() : 'AS$asnRaw');
     final fullOrg = useFuture(useMemoized(() => myAsnHolder(asn), [asn])).data;
     final activeProfile = ref.watch(activeProfileProvider).valueOrNull;
+    MyMarks.activeSection = activeProfile == null ? null : MyMarks.sections[activeProfile.id];
 
     // автопереключение при белых списках (проверка раз в 30 секунд, пока приложение открыто)
     useEffect(() {

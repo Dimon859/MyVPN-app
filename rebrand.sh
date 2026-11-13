@@ -1135,6 +1135,19 @@ def routing_extras(s):
     return s
 edit("lib/features/settings/overview/sections/routing_options_page.dart", routing_extras)
 
+# 35. Список прокси: «lowest» → «⚡ Автовыбор» / «⚡ <группа подписки>», «balance» → «⚖️ Балансировка»
+def proxy_titles(s):
+    for a, b in [
+        ("      title: Text(\n        proxy.nameWithDetour,\n",
+         "      title: Text(\n        myGroupTitle(proxy.tag, proxy.nameWithDetour), // MyVPN\n"),
+        ("import 'package:flutter/material.dart';\n",
+         "import 'package:flutter/material.dart';\nimport 'package:hiddify/features/profile/data/myvpn_marks.dart';\n"),
+    ]:
+        assert s.count(a) == 1, a.strip()[:40]
+        s = s.replace(a, b)
+    return s
+edit("lib/features/proxy/widget/proxy_tile.dart", proxy_titles)
+
 # 8. Экран запуска: туннель на тёмном фоне
 import zlib, struct
 def png(path, w, h, px):

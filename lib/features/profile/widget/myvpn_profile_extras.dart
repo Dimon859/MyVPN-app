@@ -621,7 +621,7 @@ class _MyServersDialog extends HookConsumerWidget {
                     action('Вся подписка', busy.value ? null : () => connectSection(null), icon: Icons.layers_clear_rounded),
                   if (hasSubRules)
                     action(
-                      subRulesOn ? 'Правила подписки: выкл' : 'Правила подписки: вкл',
+                      subRulesOn ? 'Выключить правила подписки' : 'Включить правила подписки',
                       () async {
                         if (subRulesOn) {
                           MyMarks.subRulesOff.add(profile.id);

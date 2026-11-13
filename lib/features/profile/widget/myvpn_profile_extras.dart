@@ -12,6 +12,7 @@ import 'package:hiddify/features/common/qr_code_dialog.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/profile/data/myvpn_marks.dart';
 import 'package:hiddify/features/connections/myvpn_connections.dart' show mySubRulesVersionProvider;
+import 'package:hiddify/features/profile/widget/profile_tile.dart';
 import 'package:hiddify/features/stats/myvpn_counters.dart';
 import 'package:hiddify/features/profile/data/profile_data_providers.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
@@ -306,6 +307,61 @@ Future<String?> myConnectTo(WidgetRef ref, ProfileEntity profile, {String? serve
   }
 }
 
+/// Серверы и группы подписки на весь экран (из вкладки «Серверы»).
+Future<void> showMyServersPage(BuildContext context, ProfileEntity profile) => Navigator.of(context, rootNavigator: true)
+    .push(MaterialPageRoute<void>(builder: (_) => _MyServersDialog(profile: profile, fullScreen: true)));
+
+/// Подписка во вкладке «Серверы»: карточка (нажатие — выбрать, ⋯ — все действия) и кнопки под ней.
+class MyTabProfile extends ConsumerWidget {
+  const MyTabProfile({super.key, required this.profile});
+
+  final ProfileEntity profile;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final active = ref.watch(activeProfileProvider).valueOrNull?.id == profile.id;
+    final section = MyMarks.sections[profile.id];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ProfileTile(profile: profile),
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              FilledButton.tonalIcon(
+                style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
+                icon: const Icon(Icons.dns_rounded, size: 18),
+                label: Text(MyMarks.subGroups[profile.id] != null ? 'Группы и серверы' : 'Серверы'),
+                onPressed: () => showMyServersPage(context, profile),
+              ),
+              if (!active || !ref.watch(serviceRunningProvider))
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
+                  icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                  label: const Text('Подключить'),
+                  onPressed: () async {
+                    final err = await myConnectTo(ref, profile);
+                    if (context.mounted) mySnack(context, err ?? 'Подключено: ${profile.name}');
+                  },
+                ),
+              if (active && section != null)
+                Chip(
+                  visualDensity: VisualDensity.compact,
+                  avatar: const Icon(Icons.folder_open_rounded, size: 16),
+                  label: Text(section, overflow: TextOverflow.ellipsis),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// Окно со списком серверов профиля.
 Future<void> showMyServers(BuildContext context, WidgetRef ref, ProfileEntity profile) async {
   await showDialog<void>(
@@ -316,9 +372,10 @@ Future<void> showMyServers(BuildContext context, WidgetRef ref, ProfileEntity pr
 }
 
 class _MyServersDialog extends HookConsumerWidget {
-  const _MyServersDialog({required this.profile});
+  const _MyServersDialog({required this.profile, this.fullScreen = false});
 
   final ProfileEntity profile;
+  final bool fullScreen;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -484,13 +541,7 @@ class _MyServersDialog extends HookConsumerWidget {
       onPressed: onTap,
     );
 
-    return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 36),
-      clipBehavior: Clip.antiAlias,
-      child: SizedBox(
-        width: media.width,
-        height: media.height * 0.86,
-        child: Column(
+    final content = Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
@@ -644,8 +695,12 @@ class _MyServersDialog extends HookConsumerWidget {
               ),
             ),
           ],
-        ),
-      ),
+        );
+    if (fullScreen) return Scaffold(body: SafeArea(child: content));
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 36),
+      clipBehavior: Clip.antiAlias,
+      child: SizedBox(width: media.width, height: media.height * 0.86, child: content),
     );
   }
 }

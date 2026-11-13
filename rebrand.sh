@@ -1163,6 +1163,46 @@ def card_group_title(s):
     return s
 edit("lib/features/proxy/active/active_proxy_card.dart", card_group_title)
 
+# 36. Вкладка «Серверы» внизу (как в Incy): Главная · Серверы · Настройки
+def tab_routes(s):
+    for a, b in [
+        ("String getNameOfBranch(bool isMobileBreakpoint, bool showProfilesAction, int index) => isMobileBreakpoint\n    ? ['home', 'settings'][index]\n",
+         "String getNameOfBranch(bool isMobileBreakpoint, bool showProfilesAction, int index) => isMobileBreakpoint\n    ? ['home', if (showProfilesAction) 'profiles', 'settings'][index]\n"),
+        ("int getIndexOfBranch(bool isMobileBreakpoint, bool showProfilesAction, String name) => isMobileBreakpoint\n    ? ['home', 'settings'].indexOf(name)\n",
+         "int getIndexOfBranch(bool isMobileBreakpoint, bool showProfilesAction, String name) => isMobileBreakpoint\n    ? ['home', if (showProfilesAction) 'profiles', 'settings'].indexOf(name)\n"),
+        ("    if (isMobileBreakpoint == true) {\n      showProfilesAction = false;\n",
+         "    if (isMobileBreakpoint == true) {\n      showProfilesAction = ref.watch(hasAnyProfileProvider).value ?? false; // MyVPN: вкладка «Серверы»\n"),
+        ("                    if (isMobileBreakpoint)\n                      GoRoute(\n                        name: 'profileDetails',\n",
+         "                    if (isMobileBreakpoint && !showProfilesAction)\n                      GoRoute(\n                        name: 'profileDetails',\n"),
+    ]:
+        assert s.count(a) == 1, a.strip()[:50]
+        s = s.replace(a, b)
+    return s
+edit("lib/core/router/go_router/routing_config_notifier.dart", tab_routes)
+def tab_nav(s):
+    for a, b in [
+        ("    if (showProfilesAction && !isMobileBreakpoint) ShellRouteAction(Icons.view_list_rounded, t.pages.profiles.title),\n",
+         "    if (showProfilesAction)\n      ShellRouteAction(Icons.dns_rounded, isMobileBreakpoint ? 'Серверы' : t.pages.profiles.title), // MyVPN\n"),
+        ("                      selectedIndex: navigationShell.currentIndex <= 1 ? navigationShell.currentIndex : 0,\n",
+         "                      selectedIndex: navigationShell.currentIndex < (showProfilesAction ? 3 : 2) ? navigationShell.currentIndex : 0,\n"),
+    ]:
+        assert s.count(a) == 1, a.strip()[:50]
+        s = s.replace(a, b)
+    return s
+edit("lib/core/router/adaptive_layout/my_adaptive_layout.dart", tab_nav)
+def tab_page(s):
+    for a, b in [
+        ("        title: Text(t.pages.profiles.title),\n", "        title: const Text('Серверы'), // MyVPN\n"),
+        ("          itemBuilder: (context, index) => ProfileTile(key: ValueKey(data[index].id), profile: data[index]),\n",
+         "          itemBuilder: (context, index) => MyTabProfile(key: ValueKey(data[index].id), profile: data[index]),\n"),
+        ("import 'package:flutter/material.dart';\n",
+         "import 'package:flutter/material.dart';\nimport 'package:hiddify/features/profile/widget/myvpn_profile_extras.dart';\n"),
+    ]:
+        assert s.count(a) == 1, a.strip()[:50]
+        s = s.replace(a, b)
+    return s
+edit("lib/features/profile/overview/profiles_page.dart", tab_page)
+
 # 8. Экран запуска: туннель на тёмном фоне
 import zlib, struct
 def png(path, w, h, px):

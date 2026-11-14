@@ -49,13 +49,26 @@ String myNameXrayJson(String text) {
       for (final o in outs)
         if (o is Map && o['type'] == null && _myProxyProtocols.contains(o['protocol'])) o,
     ];
-    // серверы, которые подписка сама выбирает автоматически (балансировщики); нет их — все серверы конфига
+    // серверы, которые подписка сама выбирает автоматически (балансировщики); нет их — все серверы конфига.
+    // Берётся только основной балансировщик — тот, куда правила отправляют трафик. Остальные у панели
+    // запасные (включаются, когда основной весь недоступен), их серверы в группу не попадают —
+    // иначе автовыбор по пингу уходит на запасные (часто российские) серверы.
     final routing = c['routing'];
-    final selectors = <String>[
+    final balancers = [
       if (routing is Map)
         for (final b in (routing['balancers'] as List? ?? const []))
-          if (b is Map)
-            for (final sel in (b['selector'] as List? ?? const [])) sel.toString(),
+          if (b is Map) b,
+    ];
+    String? mainTag;
+    if (routing is Map) {
+      for (final r in (routing['rules'] as List? ?? const [])) {
+        if (r is Map && r['inboundTag'] == null && r['balancerTag'] != null) mainTag = r['balancerTag'].toString();
+      }
+    }
+    final main = balancers.where((b) => b['tag']?.toString() == mainTag).toList();
+    final selectors = <String>[
+      for (final b in main.isNotEmpty ? main : balancers)
+        for (final sel in (b['selector'] as List? ?? const [])) sel.toString(),
     ];
     if (rules == null && routing is Map && routing['rules'] is List) rules = routing['rules'] as List;
     bool inGroup(Map o) {

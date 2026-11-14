@@ -116,4 +116,20 @@ void main() {
     expect(meta.groups['🇫🇮 Финляндия'], ['🇪🇺 Автовыбор [2]']);
     expect(meta.rules.length, 1);
   });
+
+  test('группы подписки Xray: только основной балансировщик, запасные не смешиваются', () {
+    String v(String tag, String host) => '{"protocol":"vless","tag":"$tag","settings":{"vnext":[{"address":"$host","port":443,"users":[{"id":"u"}]}]}}';
+    final json = '[{"remarks":"🇪🇺 Автовыбор","outbounds":[${v('proxy-6', 'de')},${v('proxy-7', 'nl')},${v('proxy-1', 'ru1')},${v('proxy-2', 'ru2')},${v('proxy-16', 'x')}],'
+        '"routing":{"balancers":[{"tag":"proxy_balancer_priority","selector":["proxy-6","proxy-7"]},'
+        '{"tag":"proxy_balancer_1","selector":["proxy-1","proxy-2"]},{"tag":"proxy_balancer_2","selector":["proxy-16"]}],'
+        '"rules":[{"inboundTag":["balancer-loop-1-in"],"balancerTag":"proxy_balancer_1"},'
+        '{"protocol":["bittorrent"],"outboundTag":"direct"},{"network":"tcp,udp","balancerTag":"proxy_balancer_priority"}]}},'
+        '{"remarks":"РЕЗЕРВ","outbounds":[${v('proxy-34', 'r')}],"routing":{"balancers":[{"tag":"proxy_balancer_priority","selector":["proxy-34"]}]}}]';
+    MyXrayMeta.pending.clear();
+    myNameXrayJson(json);
+    final meta = MyXrayMeta.pending.single;
+    expect(meta.groups['🇪🇺 Автовыбор'], ['🇪🇺 Автовыбор [1]', '🇪🇺 Автовыбор [2]']);
+    // нет правил — берутся все балансировщики конфига
+    expect(meta.groups['РЕЗЕРВ'], ['РЕЗЕРВ']);
+  });
 }

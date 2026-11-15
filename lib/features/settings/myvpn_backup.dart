@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:hiddify/core/directories/directories_provider.dart';
+import 'package:hiddify/core/http_client/dio_http_client.dart';
 import 'package:hiddify/features/profile/data/myvpn_marks.dart';
 import 'package:hiddify/features/profile/data/profile_data_providers.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
@@ -94,6 +95,42 @@ Future<void> myImportBackup(BuildContext context, WidgetRef ref) async {
     final data = jsonDecode(await File(path).readAsString());
     if (data is! Map || data['profiles'] is! List) throw const FormatException('это не копия Tunnex');
     if (context.mounted) _mySnack(context, 'Восстанавливаю… это может занять минуту');
+    // настройки и правила маршрутизации (копия версии 2 и новее) — до подписок, чтобы подписки
+    // сразу скачались со старым HWID, а не с новым случайным
+    var withSettings = false;
+    final settings = data['settings'];
+    if (settings is Map && settings.isNotEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      for (final e in settings.entries) {
+        final k = e.key.toString(), m = e.value;
+        if (m is! Map) continue;
+        final v = m['v'];
+        try {
+          switch (m['t']) {
+            case 'b':
+              await prefs.setBool(k, v as bool);
+            case 'i':
+              await prefs.setInt(k, (v as num).toInt());
+            case 'd':
+              await prefs.setDouble(k, (v as num).toDouble());
+            case 's':
+              await prefs.setString(k, v as String);
+            case 'l':
+              await prefs.setStringList(k, [for (final x in v as List) x.toString()]);
+          }
+        } catch (_) {}
+      }
+      withSettings = true;
+    }
+    final rules = data['routeRules'];
+    if (rules is String && rules.isNotEmpty) {
+      try {
+        final dirs = await ref.read(appDirectoriesProvider.future);
+        await File('${dirs.baseDir.path}/route_rule.proto').writeAsBytes(base64Decode(rules));
+        withSettings = true;
+      } catch (_) {}
+    }
+    DioHttpClient.myHwidReset();
     final repo = await ref.read(profileRepositoryProvider.future);
     final existing = (await repo.watchAll().first).getOrElse((_) => const []);
     final urls = {for (final p in existing) if (p case RemoteProfileEntity(:final url)) url};
@@ -132,40 +169,6 @@ Future<void> myImportBackup(BuildContext context, WidgetRef ref) async {
     MyMarks.hidden.addAll([for (final k in (data['excluded'] as List?) ?? const []) k.toString()]);
     await MyMarks.save();
     await repo.myMarksChanged();
-    // настройки и правила маршрутизации (копия версии 2 и новее)
-    var withSettings = false;
-    final settings = data['settings'];
-    if (settings is Map && settings.isNotEmpty) {
-      final prefs = await SharedPreferences.getInstance();
-      for (final e in settings.entries) {
-        final k = e.key.toString(), m = e.value;
-        if (m is! Map) continue;
-        final v = m['v'];
-        try {
-          switch (m['t']) {
-            case 'b':
-              await prefs.setBool(k, v as bool);
-            case 'i':
-              await prefs.setInt(k, (v as num).toInt());
-            case 'd':
-              await prefs.setDouble(k, (v as num).toDouble());
-            case 's':
-              await prefs.setString(k, v as String);
-            case 'l':
-              await prefs.setStringList(k, [for (final x in v as List) x.toString()]);
-          }
-        } catch (_) {}
-      }
-      withSettings = true;
-    }
-    final rules = data['routeRules'];
-    if (rules is String && rules.isNotEmpty) {
-      try {
-        final dirs = await ref.read(appDirectoriesProvider.future);
-        await File('${dirs.baseDir.path}/route_rule.proto').writeAsBytes(base64Decode(rules));
-        withSettings = true;
-      } catch (_) {}
-    }
     final summary = 'Восстановлено: $added'
         '${skipped > 0 ? ', уже были: $skipped' : ''}'
         '${failed > 0 ? ', не удалось: $failed' : ''}';

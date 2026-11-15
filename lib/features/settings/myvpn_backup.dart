@@ -22,12 +22,20 @@ void _mySnack(BuildContext context, String text) {
   ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text(text), duration: const Duration(seconds: 4)));
 }
 
+/// Профиль узнаётся в другом приложении по ссылке (подписка) или по имени — id там будут новые.
+String _myKeyOf(ProfileEntity p) => switch (p) {
+  RemoteProfileEntity(:final url) => 'r:$url',
+  _ => 'l:${p.name}',
+};
+
 /// Собирает копию: подписки ссылками, локальные профили содержимым, отметки.
 Future<Map<String, dynamic>> myBuildBackup(WidgetRef ref) async {
   final repo = await ref.read(profileRepositoryProvider.future);
   final profiles = (await repo.watchAll().first).getOrElse((_) => const []);
   final resolver = ref.read(profilePathResolverProvider);
   final items = <Map<String, dynamic>>[];
+  final ids = <String, String>{for (final p in profiles) p.id: _myKeyOf(p)};
+  final active = profiles.where((p) => p.active).map(_myKeyOf).firstOrNull;
   for (final p in profiles) {
     if (_mySpecial.contains(p.name)) continue;
     switch (p) {
@@ -62,8 +70,10 @@ Future<Map<String, dynamic>> myBuildBackup(WidgetRef ref) async {
   } catch (_) {}
   return {
     'app': 'Tunnex',
-    'version': 2,
+    'version': 3,
     'settings': settings,
+    'ids': ids,
+    if (active != null) 'active': active,
     if (rules != null) 'routeRules': rules,
     'created': DateTime.now().toIso8601String(),
     'profiles': items,
@@ -131,6 +141,8 @@ Future<void> myImportBackup(BuildContext context, WidgetRef ref) async {
       } catch (_) {}
     }
     DioHttpClient.myHwidReset();
+    // отметки в памяти — ещё пустые от нового приложения; иначе первая же запись затрёт восстановленные
+    if (withSettings) await MyMarks.reload();
     final repo = await ref.read(profileRepositoryProvider.future);
     final existing = (await repo.watchAll().first).getOrElse((_) => const []);
     final urls = {for (final p in existing) if (p case RemoteProfileEntity(:final url)) url};
@@ -164,11 +176,30 @@ Future<void> myImportBackup(BuildContext context, WidgetRef ref) async {
         }
       }
     }
-    await MyMarks.load();
+    // отметки, привязанные к id профилей (выбранная группа, страны, правила подписки), — на новые id
+    final now = (await repo.watchAll().first).getOrElse((_) => const []);
+    final byKey = {for (final p in now) _myKeyOf(p): p.id};
+    final oldIds = data['ids'] is Map ? (data['ids'] as Map).map((k, v) => MapEntry(k.toString(), v.toString())) : <String, String>{};
+    String? newId(String old) => oldIds[old] == null ? null : byKey[oldIds[old]];
+    Map<String, T> move<T>(Map<String, T> m) => {
+      for (final e in m.entries)
+        if (newId(e.key) != null) newId(e.key)! : e.value else if (byKey.containsValue(e.key)) e.key: e.value,
+    };
+    await MyMarks.reload();
+    if (oldIds.isNotEmpty) {
+      MyMarks.sections = move(MyMarks.sections);
+      MyMarks.profileCountries = move(MyMarks.profileCountries);
+      MyMarks.subGroups = move(MyMarks.subGroups);
+      MyMarks.subRules = move(MyMarks.subRules);
+      MyMarks.subRulesOff = {for (final id in MyMarks.subRulesOff) newId(id) ?? id};
+    }
     MyMarks.fav.addAll([for (final k in (data['favorites'] as List?) ?? const []) k.toString()]);
     MyMarks.hidden.addAll([for (final k in (data['excluded'] as List?) ?? const []) k.toString()]);
     await MyMarks.save();
     await repo.myMarksChanged();
+    // активный профиль — как был
+    final activeId = data['active'] == null ? null : byKey[data['active'].toString()];
+    if (activeId != null) await repo.setAsActive(activeId).run();
     final summary = 'Восстановлено: $added'
         '${skipped > 0 ? ', уже были: $skipped' : ''}'
         '${failed > 0 ? ', не удалось: $failed' : ''}';

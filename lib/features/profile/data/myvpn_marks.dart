@@ -106,6 +106,12 @@ abstract final class MyMarks {
   static String? activeSection;
   static Future<void>? _loading;
 
+  /// Перечитать с диска (после восстановления из копии — в памяти ещё старое).
+  static Future<void> reload() {
+    _loading = null;
+    return load();
+  }
+
   static Future<void> load() => _loading ??= () async {
     try {
       final p = await SharedPreferences.getInstance();

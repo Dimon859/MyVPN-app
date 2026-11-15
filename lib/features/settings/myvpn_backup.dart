@@ -10,6 +10,7 @@ import 'package:hiddify/core/http_client/dio_http_client.dart';
 import 'package:hiddify/features/profile/data/myvpn_marks.dart';
 import 'package:hiddify/features/profile/data/profile_data_providers.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
+import 'package:hiddify/features/route_rules/notifier/rules_notifier.dart';
 import 'package:hiddify/utils/uri_utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
@@ -97,6 +98,49 @@ Future<void> myExportBackup(BuildContext context, WidgetRef ref) async {
   }
 }
 
+/// Отметки, привязанные к id профилей, — их при повторной записи не трогаем (уже на новых id).
+const _myMarksKeys = {'myvpn_sections', 'myvpn_profile_countries', 'myvpn_sub_meta', 'myvpn_sub_rules_off', 'myvpn_fav', 'myvpn_hidden'};
+
+/// Записывает настройки и правила маршрутизации из копии. true — было что записать.
+Future<bool> _myApplySettings(Map data, WidgetRef ref, {Set<String> skip = const {}}) async {
+  var done = false;
+  final settings = data['settings'];
+  if (settings is Map && settings.isNotEmpty) {
+    final prefs = await SharedPreferences.getInstance();
+    for (final e in settings.entries) {
+      final k = e.key.toString(), m = e.value;
+      if (m is! Map || skip.contains(k)) continue;
+      final v = m['v'];
+      try {
+        switch (m['t']) {
+          case 'b':
+            await prefs.setBool(k, v as bool);
+          case 'i':
+            await prefs.setInt(k, (v as num).toInt());
+          case 'd':
+            await prefs.setDouble(k, (v as num).toDouble());
+          case 's':
+            await prefs.setString(k, v as String);
+          case 'l':
+            await prefs.setStringList(k, [for (final x in v as List) x.toString()]);
+        }
+      } catch (_) {}
+    }
+    done = true;
+  }
+  final rules = data['routeRules'];
+  if (rules is String && rules.isNotEmpty) {
+    try {
+      final dirs = await ref.read(appDirectoriesProvider.future);
+      await File('${dirs.baseDir.path}/route_rule.proto').writeAsBytes(base64Decode(rules), flush: true);
+      // список правил в памяти — ещё от нового приложения; перечитать с диска, чтобы он не записал себя поверх
+      ref.invalidate(rulesNotifierProvider);
+      done = true;
+    } catch (_) {}
+  }
+  return done;
+}
+
 Future<void> myImportBackup(BuildContext context, WidgetRef ref) async {
   try {
     final picked = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['json']);
@@ -107,39 +151,7 @@ Future<void> myImportBackup(BuildContext context, WidgetRef ref) async {
     if (context.mounted) _mySnack(context, 'Восстанавливаю… это может занять минуту');
     // настройки и правила маршрутизации (копия версии 2 и новее) — до подписок, чтобы подписки
     // сразу скачались со старым HWID, а не с новым случайным
-    var withSettings = false;
-    final settings = data['settings'];
-    if (settings is Map && settings.isNotEmpty) {
-      final prefs = await SharedPreferences.getInstance();
-      for (final e in settings.entries) {
-        final k = e.key.toString(), m = e.value;
-        if (m is! Map) continue;
-        final v = m['v'];
-        try {
-          switch (m['t']) {
-            case 'b':
-              await prefs.setBool(k, v as bool);
-            case 'i':
-              await prefs.setInt(k, (v as num).toInt());
-            case 'd':
-              await prefs.setDouble(k, (v as num).toDouble());
-            case 's':
-              await prefs.setString(k, v as String);
-            case 'l':
-              await prefs.setStringList(k, [for (final x in v as List) x.toString()]);
-          }
-        } catch (_) {}
-      }
-      withSettings = true;
-    }
-    final rules = data['routeRules'];
-    if (rules is String && rules.isNotEmpty) {
-      try {
-        final dirs = await ref.read(appDirectoriesProvider.future);
-        await File('${dirs.baseDir.path}/route_rule.proto').writeAsBytes(base64Decode(rules));
-        withSettings = true;
-      } catch (_) {}
-    }
+    final withSettings = await _myApplySettings(data, ref);
     DioHttpClient.myHwidReset();
     // отметки в памяти — ещё пустые от нового приложения; иначе первая же запись затрёт восстановленные
     if (withSettings) await MyMarks.reload();
@@ -195,6 +207,8 @@ Future<void> myImportBackup(BuildContext context, WidgetRef ref) async {
     }
     MyMarks.fav.addAll([for (final k in (data['favorites'] as List?) ?? const []) k.toString()]);
     MyMarks.hidden.addAll([for (final k in (data['excluded'] as List?) ?? const []) k.toString()]);
+    // ещё раз поверх: пока скачивались подписки, приложение могло переписать часть настроек и правил своими
+    if (withSettings) await _myApplySettings(data, ref, skip: _myMarksKeys);
     await MyMarks.save();
     await repo.myMarksChanged();
     // активный профиль — как был
@@ -216,7 +230,16 @@ Future<void> myImportBackup(BuildContext context, WidgetRef ref) async {
       builder: (context) => AlertDialog(
         title: const Text('Готово'),
         content: Text('$summary, плюс настройки и правила.\n\nПриложение закроется — откройте его снова, чтобы всё применилось.'),
-        actions: [FilledButton(onPressed: () => exit(0), child: const Text('Закрыть приложение'))],
+        actions: [
+          FilledButton(
+            onPressed: () async {
+              // дать iOS дописать настройки на диск, иначе часть может потеряться
+              await Future<void>.delayed(const Duration(milliseconds: 1500));
+              exit(0);
+            },
+            child: const Text('Закрыть приложение'),
+          ),
+        ],
       ),
     );
   } catch (e) {

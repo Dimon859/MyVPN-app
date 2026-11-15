@@ -884,13 +884,13 @@ MORE_TILES = """          ListTile(
           ListTile(
             leading: const Icon(Icons.save_alt_rounded),
             title: const Text('Сохранить резервную копию'),
-            subtitle: const Text('Подписки, «Мои серверы», избранное — в файл'),
+            subtitle: const Text('Подписки, избранное, все настройки и правила — в файл'),
             onTap: () => myExportBackup(context, ref),
           ),
           ListTile(
             leading: const Icon(Icons.restore_rounded),
             title: const Text('Восстановить из копии'),
-            subtitle: const Text('Добавит недостающие подписки и серверы'),
+            subtitle: const Text('Подписки, настройки и правила — например, после смены сертификата'),
             onTap: () => myImportBackup(context, ref),
           ),
 """

@@ -1,15 +1,18 @@
-// MyVPN: резервная копия подписок, «Моих серверов» и отметок (избранное, исключённые).
+// MyVPN: резервная копия подписок, «Моих серверов», отметок, всех настроек и правил маршрутизации.
+// Нужна и для переезда на новый сертификат: там другое приложение, данные сами не переходят.
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:hiddify/core/directories/directories_provider.dart';
 import 'package:hiddify/features/profile/data/myvpn_marks.dart';
 import 'package:hiddify/features/profile/data/profile_data_providers.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/utils/uri_utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 const _mySpecial = {'Все подписки', 'Избранное'};
 const _myMine = 'Мои серверы';
@@ -35,9 +38,32 @@ Future<Map<String, dynamic>> myBuildBackup(WidgetRef ref) async {
     }
   }
   await MyMarks.load();
+  // все настройки приложения (HWID, лимиты, DNS, режимы, источники гео и т. д.)
+  final prefs = await SharedPreferences.getInstance();
+  final settings = <String, Map<String, Object?>>{};
+  for (final k in prefs.getKeys()) {
+    final v = prefs.get(k);
+    final t = switch (v) {
+      bool() => 'b',
+      int() => 'i',
+      double() => 'd',
+      String() => 's',
+      List() => 'l',
+      _ => null,
+    };
+    if (t != null) settings[k] = {'t': t, 'v': v};
+  }
+  String? rules;
+  try {
+    final dirs = await ref.read(appDirectoriesProvider.future);
+    final f = File('${dirs.baseDir.path}/route_rule.proto');
+    if (await f.exists()) rules = base64Encode(await f.readAsBytes());
+  } catch (_) {}
   return {
     'app': 'Tunnex',
-    'version': 1,
+    'version': 2,
+    'settings': settings,
+    if (rules != null) 'routeRules': rules,
     'created': DateTime.now().toIso8601String(),
     'profiles': items,
     'favorites': MyMarks.fav.toList(),
@@ -54,7 +80,7 @@ Future<void> myExportBackup(BuildContext context, WidgetRef ref) async {
     final file = File('${dir.path}/tunnex-backup-${now.year}-${two(now.month)}-${two(now.day)}.json');
     await file.writeAsString(const JsonEncoder.withIndent('  ').convert(data));
     final ok = await UriUtils.tryShareFile(file.uri, mimeType: 'application/json');
-    if (context.mounted && ok) _mySnack(context, 'Копия сохранена: ${(data['profiles'] as List).length} профилей');
+    if (context.mounted && ok) _mySnack(context, 'Копия сохранена: ${(data['profiles'] as List).length} профилей и все настройки');
   } catch (e) {
     if (context.mounted) _mySnack(context, 'Не удалось сохранить копию: $e');
   }
@@ -106,14 +132,59 @@ Future<void> myImportBackup(BuildContext context, WidgetRef ref) async {
     MyMarks.hidden.addAll([for (final k in (data['excluded'] as List?) ?? const []) k.toString()]);
     await MyMarks.save();
     await repo.myMarksChanged();
-    if (context.mounted) {
-      _mySnack(
-        context,
-        'Восстановлено: $added'
-        '${skipped > 0 ? ', уже были: $skipped' : ''}'
-        '${failed > 0 ? ', не удалось: $failed' : ''}',
-      );
+    // настройки и правила маршрутизации (копия версии 2 и новее)
+    var withSettings = false;
+    final settings = data['settings'];
+    if (settings is Map && settings.isNotEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      for (final e in settings.entries) {
+        final k = e.key.toString(), m = e.value;
+        if (m is! Map) continue;
+        final v = m['v'];
+        try {
+          switch (m['t']) {
+            case 'b':
+              await prefs.setBool(k, v as bool);
+            case 'i':
+              await prefs.setInt(k, (v as num).toInt());
+            case 'd':
+              await prefs.setDouble(k, (v as num).toDouble());
+            case 's':
+              await prefs.setString(k, v as String);
+            case 'l':
+              await prefs.setStringList(k, [for (final x in v as List) x.toString()]);
+          }
+        } catch (_) {}
+      }
+      withSettings = true;
     }
+    final rules = data['routeRules'];
+    if (rules is String && rules.isNotEmpty) {
+      try {
+        final dirs = await ref.read(appDirectoriesProvider.future);
+        await File('${dirs.baseDir.path}/route_rule.proto').writeAsBytes(base64Decode(rules));
+        withSettings = true;
+      } catch (_) {}
+    }
+    final summary = 'Восстановлено: $added'
+        '${skipped > 0 ? ', уже были: $skipped' : ''}'
+        '${failed > 0 ? ', не удалось: $failed' : ''}';
+    if (!context.mounted) return;
+    if (!withSettings) {
+      _mySnack(context, summary);
+      return;
+    }
+    // настройки держатся в памяти и при работе перезаписываются — приложение надо открыть заново
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      useRootNavigator: true,
+      builder: (context) => AlertDialog(
+        title: const Text('Готово'),
+        content: Text('$summary, плюс настройки и правила.\n\nПриложение закроется — откройте его снова, чтобы всё применилось.'),
+        actions: [FilledButton(onPressed: () => exit(0), child: const Text('Закрыть приложение'))],
+      ),
+    );
   } catch (e) {
     if (context.mounted) _mySnack(context, 'Не удалось восстановить: $e');
   }

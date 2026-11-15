@@ -1288,6 +1288,46 @@ def details_lazy(s):
     return s
 edit("lib/features/profile/details/profile_details_page.dart", details_lazy)
 
+# 38. Правила маршрутизации: встроенные тоже можно удалять (и вернуть разом в «Маршрутизации»)
+def builtins_removable(s):
+    for a, b in [
+        ("import 'package:hiddify/core/notification/in_app_notification_controller.dart';\n",
+         "import 'package:hiddify/core/notification/in_app_notification_controller.dart';\nimport 'package:hiddify/core/preferences/preferences_provider.dart';\n"),
+        ("    final missing = {\n      for (final builtin in BuiltinRule.values)\n        if (builtin != BuiltinRule.bypassRegion || region != Region.other) builtin,\n    };\n",
+         "    // MyVPN: удалённые пользователем встроенные правила обратно не добавляются\n"
+         "    final removed = (ref.read(sharedPreferencesProvider).requireValue.getStringList('myvpn_builtins_removed') ?? const []).toSet();\n"
+         "    final missing = {\n      for (final builtin in BuiltinRule.values)\n        if ((builtin != BuiltinRule.bypassRegion || region != Region.other) && !removed.contains(builtin.key)) builtin,\n    };\n"),
+        ("  Future<void> deleteRule(int listOrder) async {\n    final current = state;\n",
+         "  Future<void> deleteRule(int listOrder) async {\n    final current = state;\n"
+         "    // MyVPN: встроенное правило запоминается как удалённое, иначе оно вернётся при следующем открытии\n"
+         "    final gone = current.where((e) => e.listOrder == listOrder).map(BuiltinRule.of).nonNulls.firstOrNull;\n"
+         "    if (gone != null) {\n"
+         "      final prefs = ref.read(sharedPreferencesProvider).requireValue;\n"
+         "      await prefs.setStringList('myvpn_builtins_removed', {...?prefs.getStringList('myvpn_builtins_removed'), gone.key}.toList());\n"
+         "    }\n"),
+        ("  Future<void> reorder(int oldIndex, int newIndex) async {\n",
+         "  /// MyVPN: вернуть все удалённые встроенные правила. Сколько вернулось.\n"
+         "  Future<int> myRestoreBuiltins() async {\n"
+         "    final prefs = ref.read(sharedPreferencesProvider).requireValue;\n"
+         "    final n = prefs.getStringList('myvpn_builtins_removed')?.length ?? 0;\n"
+         "    await prefs.remove('myvpn_builtins_removed');\n"
+         "    state = _withBuiltins(state);\n"
+         "    await _updateFile();\n"
+         "    return n;\n"
+         "  }\n\n"
+         "  Future<void> reorder(int oldIndex, int newIndex) async {\n"),
+    ]:
+        assert s.count(a) == 1, "builtins: " + a.strip()[:50]
+        s = s.replace(a, b)
+    return s
+edit("lib/features/route_rules/notifier/rules_notifier.dart", builtins_removable)
+
+def tile_delete_any(s):
+    a = "        // a built-in rule stays: it can be duplicated, not deleted\n        if (builtin == null)\n          PopupMenuItem(\n            onTap: () async => await handleDelete(context, ref),\n"
+    assert s.count(a) == 1, "tile delete"
+    return s.replace(a, "        // MyVPN: удалить можно любое правило, встроенное тоже\n        PopupMenuItem(\n            onTap: () async => await handleDelete(context, ref),\n")
+edit("lib/features/route_rules/widget/rule_tile.dart", tile_delete_any)
+
 # Проверка: в текстах интерфейса не осталось «Hiddify»
 left = [f for f in glob.glob("assets/translations/*.i18n.json") if "Hiddify" in open(f, encoding="utf-8").read()]
 assert not left, f"остался Hiddify: {left}"

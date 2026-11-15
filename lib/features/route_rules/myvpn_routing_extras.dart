@@ -55,6 +55,19 @@ class MyRoutingExtras extends HookConsumerWidget {
           onTap: () => showMyImport(context, ref),
         ),
         ListTile(
+          leading: const Icon(Icons.settings_backup_restore_rounded),
+          title: const Text('Вернуть встроенные правила'),
+          subtitle: const Text('Если удаляли встроенные (локальная сеть, реклама, Apple и др.) — вернутся выключенными или как по умолчанию'),
+          onTap: () async {
+            final n = await ref.read(rulesNotifierProvider.notifier).myRestoreBuiltins();
+            if (context.mounted) {
+              ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+                SnackBar(content: Text(n == 0 ? 'Все встроенные правила и так на месте' : 'Вернул встроенных правил: $n')),
+              );
+            }
+          },
+        ),
+        ListTile(
           leading: const Icon(Icons.dataset_outlined),
           title: const Text('Источники списков (geosite / geoip)'),
           subtitle: Text(src == null ? 'Не загружать — списки не используются' : src.name),

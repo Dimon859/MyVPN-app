@@ -48,7 +48,7 @@ jobs:
           sed -i '' "s/^BASE_BUNDLE_IDENTIFIER=.*/BASE_BUNDLE_IDENTIFIER=${BUNDLE}/" ios/Base.xcconfig
           sed -i '' "s/^DEVELOPMENT_TEAM=.*/DEVELOPMENT_TEAM=${TEAM}/" ios/Base.xcconfig
           sed -i '' "s/group\.\$(BASE_BUNDLE_IDENTIFIER)/${GROUP}/" ios/Runner/Runner.entitlements ios/HiddifyPacketTunnel/HiddifyPacketTunnel.entitlements
-          sed -i '' "s/static let groupName = .*/static let groupName = \"${GROUP}\"/" ios/Shared/FilePath.swift
+          sed -i '' "s/static let myDefaultGroup = .*/static let myDefaultGroup = \"${GROUP}\"/" ios/Shared/FilePath.swift
           plutil -replace CFBundleDisplayName -string "$APPNAME" ios/Runner/Info.plist
           echo "--- проверка ---"
           plutil -extract CFBundleDisplayName raw ios/Runner/Info.plist

@@ -5,19 +5,19 @@ on:
     inputs:
       bundle_id:
         description: 'Bundle ID из профиля (application-identifier без Team ID)'
-        default: 'app.wolf1222.pomegranate4762'
+        default: 'app.cancer6477.cranberry6956'
       app_group:
         description: 'App Group из профиля'
-        default: 'group.88a127e35b3d8761.1'
+        default: 'group.913722247500c4ec.1'
       team_id:
         description: 'Team ID из профиля'
-        default: 'HH34UVC32L'
+        default: '744Z53VDF8'
       app_name:
         description: 'Название под иконкой на iPhone'
         default: 'Tunnex'
       app_version:
         description: 'Версия приложения (например 1.0.0)'
-        default: '1.8.4'
+        default: '1.8.5'
 
 jobs:
   ios:
